@@ -7,14 +7,14 @@ This project is currently underdevelopment and aims to couple Autodifferenciatio
 ## Files
 
 ### `MCMC_analysis.jl`
-Description: This file is responsible for the MCMC analysis of the rabbits and foxes model using a hand made metropolis hastings algorithm. 
+This file is responsible for the MCMC analysis of the rabbits and foxes model using a hand made metropolis hastings algorithm. 
 
 
 ### `AD_ODE_RK2.jl`
-Description: This file solves the system of ODEs using the DifferentialEquations package.
+This file solves the system of ODEs using the DifferentialEquations package.
 
 ### `old/AD_ODE2.jl`
-Description: This file solves the system of ODEs using a explicit Euler method made by myself.
+This file solves the system of ODEs using a explicit Euler method made by myself.
 
 
 ## Running the Project
@@ -24,6 +24,3 @@ include("MCMC_analysis.jl")
 ```
 
 This should run the solving/MCMC algorithms and generate the respective img files inside the folder already
-
-## Dependencies
-For now, this project has used some packages available in the base such as
