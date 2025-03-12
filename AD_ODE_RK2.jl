@@ -1,34 +1,72 @@
 
-#Based off: https://docs.sciml.ai/DiffEqDocs/stable/basics/faq/#:~:text=Native%20Julia%20solvers%20compatibility%20with,analysis%20page%20for%20more%20details.
+"""
+This file solves the system of ODEs using the DifferentialEquations package.
+The system of ODEs is the Lotka-Volterra model with the addition of the derivatives of the state variables with respect to the parameters.
+
+I took some inspiration out of: https://docs.sciml.ai/DiffEqDocs/stable/basics/faq/#:~:text=Native%20Julia%20solvers%20compatibility%20with,analysis%20page%20for%20more%20details
+"""
+
 using DifferentialEquations
 using ForwardDiff
 using Plots
 
 function rabbits_ODE(nrabbits, nfoxes, epsilon, gamma)
+    """
+    ODE responsible to calculate the rabbits population over time.
+
+    Parameters:
+    @nrabbits: number of rabbits.
+    @nfoxes: number of foxes.
+    @epsilon: parameter that controls the growth of the rabbits population.
+    @gamma: parameter that controls the decrease of the rabbits population.
+    """
     return (epsilon - gamma * nfoxes) * nrabbits
 end
 
 function foxes_ODE(nrabbits, nfoxes, epsilon, gamma)
+    """
+    ODE responsible to calculate the foxes population over time.
+
+    Parameters:
+    @nrabbits: number of rabbits.
+    @nfoxes: number of foxes.
+    @epsilon: parameter that controls the growth of the foxes population.
+    @gamma: parameter that controls the decrease of the foxes population.
+    """
     return -(epsilon-gamma * nrabbits) * nfoxes
 end
 
 function system(nrabbits, nfoxes, epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes)
+    """
+    This function packs the system of ODEs so I can pass this as a sole function to the ForwardDiff.jacobian.
+    
+    Parameters:
+    @nrabbits: number of rabbits.
+    @nfoxes: number of foxes.
+    @epsilon_rabbits: parameter that controls the growth of the rabbits population.
+    @gamma_rabbits: parameter that controls the decrease of the rabbits population.
+    @epsilon_foxes: parameter that controls the growth of the foxes population.
+    @gamma_foxes: parameter that controls the decrease of the foxes population.
+    """
     f1 = rabbits_ODE(nrabbits, nfoxes, epsilon_rabbits, gamma_rabbits)
     f2 = foxes_ODE(nrabbits, nfoxes, epsilon_foxes, gamma_foxes)
     return [f1, f2]
 end
 
 
-function func(du, u, p, t)~
+function func(du, u, p, t)
 
     """
     This function declares the system of ODEs that are going to be solved by solve.
+
+    Parameters:
     @du is the derivative of the state variables.
     @u is the state variables.
     @p is the parameters.
-    @t is the time.
+    @t is the time (Right now the system is time-independent, but generalizing it should be easy).
 
-    Indexes:
+    Observations:
+    The indexes are organized as following
     @du and @u = [
         1  - drabbits/dt,       2  - dfoxes/dt,
         3  - drabbits/de1,      4  - dfoxes/de1,
@@ -38,7 +76,13 @@ function func(du, u, p, t)~
         11 - drabbits/dnrabbits0, 12 - dfoxes/dnrabbits0,
         13 - drabbits/dnfoxes0, 14 - dfoxes/dnfoxes0
     ]
+
     @p = [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes, nrabbits0, nfoxes0]
+
+    @jacobian_matrix format is:
+    |df1/dy1 df1/dy2 df1/de1 df1/dgamma1 df1/de2 df1/dgamma2|
+    |df2/dy1 df2/dy2 df2/de1 df2/dgamma1 df2/de2 df2/dgamma2|
+    (2 x 6)
     """
     #drabbits/erab and dfoxes/erab
     jacobian_matrix = ForwardDiff.jacobian(x -> system(x[1], x[2], x[3], x[4], x[5], x[6]), [u[1], u[2], p[1], p[2], p[3], p[4]])
@@ -76,11 +120,19 @@ end
 function solve_system(p)
     """
     This function solves the system of ODEs.
+
+    Parameters:
+    @p is the parameters.
+
+    Variables:
     @u0 is the initial conditions.
     @tspan is the time span.
-    @p is the parameters.
+    @prob is the ODEProblem.
+    @sol is the solution of the system of ODEs.
+
     
-    Indexes:
+    Observations:
+    the indexes are organized as follows:
     @u0 = [
         1  - rabbits,             2  - foxes,
         3  - drabbits/de1,        4  - dfoxes/de1,
@@ -90,6 +142,7 @@ function solve_system(p)
         11 - drabbits/dnrabbits0, 12 - dfoxes/dnrabbits0,
         13 - drabbits/dnfoxes0,   14 - dfoxes/dnfoxes0
     ]
+    @tspan = [t0, tf]
     """
     u0 = [1000.0, 20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0] 
     tspan = (0.0, 1000.0)
@@ -101,9 +154,12 @@ end
 function plot_and_save(sol)
     """
     This function plots the results of the system of ODEs.
+
+    Parameters:
     @sol is the solution of the system of ODEs.
 
-    Indexes:
+    Observations:
+    The indexes are as following:
     @sol = [
         1  - time,                2  - rabbits,
         3  - foxes,               4  - drabbits/de1,
@@ -162,6 +218,7 @@ function plot_and_save(sol)
     return
 end
 
+#Running the code (I'd rather do this in main function)
 p = [0.015, 0.0001, 0.03, 0.0001]
 sol = solve_system(p)
 plot_and_save(sol)

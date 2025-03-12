@@ -4,31 +4,25 @@ using Plots
 using StatsBase
 using Distributions
 using Random
-using MCMCChains
-using Dates
 
-function rabbits_ODE(nrabbits, nfoxes, epsilon, gamma)
-    return (epsilon - gamma * nfoxes) * nrabbits
-end
-
-function foxes_ODE(nrabbits, nfoxes, epsilon, gamma)
-    return -(epsilon-gamma * nrabbits) * nfoxes
-end
-
-function system(nrabbits, nfoxes, epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes)
-    f1 = rabbits_ODE(nrabbits, nfoxes, epsilon_rabbits, gamma_rabbits)
-    f2 = foxes_ODE(nrabbits, nfoxes, epsilon_foxes, gamma_foxes)
-    return [f1, f2]
-end
+"""
+This file is responsible for the MCMC analysis of the rabbits and foxes model using a hand made metropolis hastings algorithm.
+"""
 
 function func(du, u, p, t)
-    # Extract states and parameters
+    """
+    This function defines the system of ODEs for the rabbits and foxes model.
+    
+    Parameters:
+    @du - derivative of the state variables
+    @u - state variables [nrabbits, nfoxes]
+    @p - parameters [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
+    @t - time
+    """
     nrabbits, nfoxes = u[1], u[2]
     epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes = p
     
-    # Rabbits
     du[1] = (epsilon_rabbits - gamma_rabbits * nfoxes) * nrabbits
-    # Foxes
     du[2] = -(epsilon_foxes - gamma_foxes * nrabbits) * nfoxes
 end
 
@@ -37,32 +31,36 @@ function solve_system(p; u0=[1000.0, 20.0], tspan=(0.0, 100.0), solver=Midpoint(
     This function solves the system of ODEs with simpler state variables (just rabbits and foxes).
     
     Parameters:
-    p - parameters [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
-    u0 - initial conditions [rabbits0, foxes0]
-    tspan - time span (start_time, end_time)
-    solver - ODE solver algorithm
-    saveat - time points to save at
+    @p - parameters [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
+    @u0 - initial conditions [rabbits0, foxes0]
+    @tspan - time span (start_time, end_time)
+    @solver - ODE solver algorithm
+    @saveat - time points to save at
+
+    Variables:
+    @prob - ODE problem
+    @sol - solution of the ODE system
     """
     prob = ODEProblem(func, u0, tspan, p)
     sol = solve(prob, solver, saveat=saveat)
     return sol
 end
 
-# Generate synthetic data
 function generate_synthetic_data(true_params; noise_level=0.05, seed=498)
     """
     Generate synthetic data for the model.
-    @true_params are the true parameters of the model.
-    @noise_level is the standard deviation of the Gaussian noise.
+
+    Parameters:
+    @true_params are the correct chosen parameters of the model.
+    @noise_level is a constant to set the level of the Gaussian noise to the true solution of the ODE system.
     @seed is the random seed for reproducibility.
     
-    Returns:
-    @t - time points
-    @rabbits_obs - observed rabbits (True values with noise)
-    @foxes_obs - observed foxes (True values with noise)
-    @rabbits - true rabbits
-    @foxes - true foxes
+    Variables:
+    @sol - solution of the ODE system
+    @rabbits_obs - observed rabbits
+    @foxes_obs - observed foxes
     """
+
     println("Using seed: $seed")
     Random.seed!(seed)
     
@@ -72,6 +70,7 @@ function generate_synthetic_data(true_params; noise_level=0.05, seed=498)
     rabbits = sol[1, :]
     foxes = sol[2, :]
     
+    #Generating synthetic observations with noise
     rabbits_obs = rabbits .* (1 .+ noise_level * randn(length(rabbits)))
     foxes_obs = foxes .* (1 .+ noise_level * randn(length(foxes)))
     
@@ -83,44 +82,35 @@ end
 
 using Distributions
 
-# function log_likelihood(params, t, rabbits_obs, foxes_obs; sigma_rabbits=100.0, sigma_foxes=5.0, rho=0.5)
-#     lower_bounds = [0.0, 0.0, 0.0, 0.0]
-#     upper_bounds = [0.1, 0.001, 0.1, 0.001]
-    
-#     if any(params .< lower_bounds) || any(params .> upper_bounds)
-#         println("Parameters out of bounds, returning -Inf", params)
-#         return -Inf
-#     end
-    
-#     try
-#         sol = solve_system(params, tspan=(0.0, 100.0), saveat=t)
-        
-#         if sol.retcode != :Success
-#             println("Integration failed, returning -Inf")
-#             return -Inf
-#         end
-        
-#         rabbits_pred = sol[1, :]
-#         foxes_pred = sol[2, :]
-        
-#         Σ = [sigma_rabbits^2  rho * sigma_rabbits * sigma_foxes;
-#              rho * sigma_rabbits * sigma_foxes  sigma_foxes^2] # Covariance matrix
-        
-#         ll = 0.0
-#         for i in eachindex(t)
-#             mu = [rabbits_pred[i], foxes_pred[i]]  # Mean vector
-#             obs = [rabbits_obs[i], foxes_obs[i]]  # Observations at time i
-#             ll += logpdf(MvNormal(mu, Σ), obs)  # Joint log-likelihood
-#         end
-        
-#         return ll
-#     catch
-#         println("Integration failure unknown, returning -Inf")
-#         return -Inf
-#     end
-# end
+
 
 function log_likelihood(params, t, rabbits_obs, foxes_obs; sigma_rabbits=2.0, sigma_foxes=2.0)
+    """
+    Calculate the log-likelihood of the model given the parameters and observed data.
+
+    Parameters:
+    @params - model parameters [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
+    @t - time points
+    @rabbits_obs - observed rabbits
+    @foxes_obs - observed foxes
+    @sigma_rabbits - standard deviation of the Gaussian loglikelihood for rabbits
+    @sigma_foxes - standard deviation of the Gaussian loglikelihood for foxes
+
+    Variables:
+    @sol - solution of the ODE system
+    @rabbits_pred - predicted rabbits
+    @foxes_pred - predicted foxes
+    @ll_rabbits - log-likelihood of rabbits
+    @ll_foxes - log-likelihood of foxes
+
+    Returns:
+    @ll_rabbits + ll_foxes - sum of log-likelihoods
+
+    Observations:
+    logpdf(Normal(μ, σ), x) calculates the log-likelihood of x given a Normal distribution.
+
+    logpdf(Normal, x) = - (x - μ)^2 / (2 * σ^2) - log(sqrt(2 * π) * σ^2)
+    """
     lower_bounds = [0.0, 0.0, 0.0, 0.0]
     upper_bounds = [0.1, 0.001, 0.1, 0.001]
     
@@ -133,12 +123,13 @@ function log_likelihood(params, t, rabbits_obs, foxes_obs; sigma_rabbits=2.0, si
         sol = solve_system(params, tspan=(0.0, 100.0), saveat=t)
         
         if sol.retcode != :Success
-            println("Integration failed, returning -Inf")
+            println("Integration failed due to $(sol.retcode), returning -Inf")
             return -Inf
         end
         
         rabbits_pred = sol[1, :]
         foxes_pred = sol[2, :]
+        
         
         ll_rabbits = sum(logpdf.(Normal.(rabbits_pred, sigma_rabbits), rabbits_obs))
         ll_foxes = sum(logpdf.(Normal.(foxes_pred, sigma_foxes), foxes_obs))
@@ -152,7 +143,21 @@ end
 
 # Prior distribution
 function log_prior(params)
-    # Prior distributions for each parameter
+    """
+    Calculate the log-prior of the model parameters.
+
+    Parameters:
+    @params - model parameters [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
+
+    Variables:
+    @priors - list of prior distributions for each parameter
+    @log_p - sum of log-priors
+
+    Observations:
+    logpdf(Uniform(a, b), x) calculates the log-likelihood of x given a Uniform distribution.
+
+    logpdf(Uniform(a,b), x) = - log(b - a)
+    """
     priors = [
         Uniform(0, 0.1),     # epsilon_rabbits
         Uniform(0, 0.001),   # gamma_rabbits
@@ -167,73 +172,122 @@ end
 
 # Log posterior (proportional to)
 function log_posterior(params, t, rabbits_obs, foxes_obs)
+    """
+    Calculate the log-posterior of the model given the parameters and observed data.
+
+    Parameters:
+    @params - model parameters [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
+    @t - time points
+    @rabbits_obs - observed rabbits
+    @foxes_obs - observed foxes
+
+    Variables:
+    @lp - check if the parameters are outside the prior support
+    @ll - log-likelihood of the model
+    @lp + ll - sum of log-prior and log-likelihood
+    """
     lp = log_prior(params)
     
-    # If the parameters are outside the prior support, return -Inf
     if isinf(lp)
         return -Inf
     end
     
-    # Otherwise, calculate the log-likelihood and add it to the log-prior
     ll = log_likelihood(params, t, rabbits_obs, foxes_obs)
     return lp + ll
 end
 
-# Metropolis-Hastings MCMC sampler
 function metropolis_hastings(log_post_func, initial_params, n_samples; proposal_sd)
-    # Initialize
+    """
+    Perform Metropolis-Hastings MCMC sampling.
+
+    Parameters:
+    @log_post_func - function to calculate the log-posterior
+    @initial_params - initial parameter values
+    @n_samples - number of MCMC samples
+    @proposal_sd - standard deviation of the Gaussian proposal distribution
+
+    Variables:
+    @samples - matrix to store the MCMC samples
+    @current_params - current parameter values
+    @current_log_post - current log-posterior
+    @proposal_params - proposed parameter values
+    @proposal_log_post - proposed log-posterior
+    @alpha - acceptance probability
+    @n_accepted - counter for accepted samples
+
+    Returns:
+    @samples - MCMC samples
+    @acceptance_rate - acceptance rate
+    """
+    
     samples = zeros(n_samples, length(initial_params))
     current_params = copy(initial_params)
     current_log_post = log_post_func(current_params)
     
-    # Check if initial point is valid
     if isinf(current_log_post)
         error("Initial point has zero posterior probability")
     end
     
-    # Set first sample to initial parameters
     samples[1, :] = current_params
     
-    # Acceptance counter
     n_accepted = 0
     
-    # Main MCMC loop
     for i in 2:n_samples
-        # Propose new parameters
         proposal_params = current_params + proposal_sd .* randn(size(current_params))
 
-        
-        # Calculate log posterior for proposal
         proposal_log_post = log_post_func(proposal_params)
         
-        # Calculate acceptance probability
         alpha = min(1.0, exp(proposal_log_post - current_log_post))
         
-        # Accept or reject
         if rand() < alpha
             current_params = proposal_params
             current_log_post = proposal_log_post
             n_accepted += 1
         end
         
-        # Store current parameters
         samples[i, :] = current_params
         
-        # Print progress
         if i % 500 == 0
             acceptance_rate = n_accepted / (i - 1)
             println("Iteration $i, acceptance rate: $(round(acceptance_rate, digits=3))")
         end
     end
     
-    # Calculate final acceptance rate
     acceptance_rate = n_accepted / (n_samples - 1)
     println("Final acceptance rate: $(round(acceptance_rate, digits=3))")
     
     return samples, acceptance_rate
 end
+
 function plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, samples)
-    # Get median and 95% credible intervals for parameters
+    """
+    Plot the results of the MCMC analysis.
+
+    Parameters:
+    @t - time points
+    @rabbits_obs - observed rabbits (True + noise)
+    @foxes_obs - observed foxes (True + noise)
+    @true_rabbits - true rabbits (True + noise)
+    @true_foxes - true foxes (True + noise)
+    @samples - MCMC samples
+
+    Variables:
+    @param_medians - median of the parameter samples
+    @param_lower - lower bound of the 95% Confidence Interval (CI)
+    @param_upper - upper bound of the 95% Confidence Interval (CI)
+    @param_names - names of the parameters
+    @p1 - plot of the rabbit population
+    @p2 - plot of the fox population
+    @p_combined - combined plot of the rabbit and fox populations
+    @p_trace - plot of the MCMC trace
+    @p_hist - plot of the parameter posterior distributions
+
+    Observations:
+    quantile(x, q) returns the q-th quantile of x (The value below which qth of the data lies).
+
+
+    """
+
     param_medians = median(samples, dims=1)[:]
     param_lower = [quantile(samples[:, i], 0.025) for i in 1:size(samples, 2)]
     param_upper = [quantile(samples[:, i], 0.975) for i in 1:size(samples, 2)]
@@ -244,12 +298,11 @@ function plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, sampl
         println("$(param_names[i]): $(round(param_medians[i], digits=6)) ($(round(param_lower[i], digits=6)) - $(round(param_upper[i], digits=6)))")
     end
     
-    # Predict with median parameters
+    # Solve system with median parameters
     sol_median = solve_system(param_medians, tspan=(0.0, 100.0), saveat=t)
     rabbits_pred = sol_median[1, :]
     foxes_pred = sol_median[2, :]
     
-    # Plot data and predictions with larger size
     p1 = plot(t, rabbits_obs, seriestype=:scatter, color=:blue, label="Observed rabbits", markersize=3, size=(1200, 900))
     plot!(p1, t, true_rabbits, color=:blue, linestyle=:dash, linewidth=2, label="True rabbits")
     plot!(p1, t, rabbits_pred, color=:red, linewidth=2, label="Predicted rabbits")
@@ -265,12 +318,10 @@ function plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, sampl
     p_combined = plot(p1, p2, layout=(2, 1), size=(1200, 900))
     savefig(p_combined, "./imgs/MCMC/population_fit.png")
     
-    # Plot MCMC trace with larger size
     p_trace = plot(samples, layout=(4, 1), labels=reshape(param_names, 1, 4), 
                  title=["Trace of epsilon_rabbits" "Trace of gamma_rabbits" "Trace of epsilon_foxes" "Trace of gamma_foxes"], size=(1200, 900))
     savefig(p_trace, "./imgs/MCMC/parameter_traces.png")
     
-    # Plot parameter posterior distributions with larger size
     p_hist = histogram(samples, layout=(2, 2), labels=reshape(param_names, 1, 4),
                     title=["Posterior of epsilon_rabbits" "Posterior of gamma_rabbits" "Posterior of epsilon_foxes" "Posterior of gamma_foxes"], size=(1200, 900))
     savefig(p_hist, "./imgs/MCMC/parameter_posteriors.png")
@@ -280,8 +331,38 @@ end
 
 # Main execution
 function main()
-    # Define true parameters
-    true_params = [0.015, 0.0001, 0.03, 0.0001]  # [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
+    """
+    Main function to run the MCMC analysis (I like to have a main function in order to wrap around things nicely in my head lol)
+    This script it based off an old script I developed myself in Python a few years back. I have adapted it to Julia and my current problem.
+
+    Variables:
+    @true_params - true parameters of the model [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
+    @t - time points
+    @rabbits_obs - observed rabbits (True + noise)
+    @foxes_obs - observed foxes (True + noise)
+    @true_rabbits - true rabbits 
+    @true_foxes - true foxes
+    @initial_params - initial parameter values
+    @log_post - log-posterior function
+    @n_samples - number of MCMC samples
+    @samples - MCMC samples
+    @burnin - number of burn-in samples
+    @samples_post_burnin - MCMC samples after burn-in
+    @p_data - plot of the synthetic data
+
+    Observations:
+    The workflow of this function is as follows
+        1. Generate synthetic data by solving the system with true parameters and adding Gaussian noise.
+        2. Plot the synthetic data.
+        3. Generate initial guess by adding noise to the true parameters
+        4. Assign the log-posterior function to a variable and pass this to MCMC sampler so I can easily change the loglikelihood function if I want to.
+        5. Run the Metropolis-Hastings MCMC algorithm.
+        6. Discard the burn-in period.
+        7. Plot the results.
+    """
+
+
+    true_params = [0.015, 0.0001, 0.03, 0.0001]
     
     println("Generating synthetic data with true parameters:")
     println("epsilon_rabbits: $(true_params[1])")
@@ -289,12 +370,9 @@ function main()
     println("epsilon_foxes: $(true_params[3])")
     println("gamma_foxes: $(true_params[4])")
     
-    # Generate synthetic data
-    #This function solves the system given the true_params. It adds noise to the solution to create synthetic observations.
-    #It returns the time points, observed rabbits and foxes, and true rabbits and foxes.
     t, rabbits_obs, foxes_obs, true_rabbits, true_foxes = generate_synthetic_data(true_params, noise_level=0.1)
     
-    # Plot synthetic data
+    # Plotting synthetic data so we can easily compare perturbed to unperturbed data
     p_data = plot(t, rabbits_obs, seriestype=:scatter, label="Observed rabbits", markersize=3)
     plot!(p_data, t, foxes_obs, seriestype=:scatter, label="Observed foxes", markersize=3)
     plot!(p_data, t, true_rabbits, label="True rabbits", linewidth=2)
@@ -304,10 +382,8 @@ function main()
     title!(p_data, "Synthetic Data")
     savefig(p_data, "./imgs/MCMC/synthetic_data.png")
     
-    # Initial guess (perturbed true parameters)
-    initial_params = true_params .* (1 .+ randn(length(true_params)))
-    # Ensure non-negative values
-    initial_params = max.(initial_params, [0.001, 0.00001, 0.001, 0.00001])
+    initial_params = true_params .* (1 .+ randn(length(true_params)))  # Initial guess (perturbed true parameters)
+    initial_params = max.(initial_params, [0.001, 0.00001, 0.001, 0.00001]) # Ensure parameters are positive
 
     println("Starting MCMC with initial parameters:")
     println("epsilon_rabbits: $(initial_params[1])")
@@ -315,28 +391,27 @@ function main()
     println("epsilon_foxes: $(initial_params[3])")
     println("gamma_foxes: $(initial_params[4])")
     
-    # Create log_posterior function with fixed data
     log_post = params -> log_posterior(params, t, rabbits_obs, foxes_obs)
     
-    # Run MCMC
-    n_samples = 200000
+    n_samples = 20000
     println("Running Metropolis-Hastings MCMC with $n_samples samples...")
     samples, acceptance_rate = metropolis_hastings(log_post, initial_params, n_samples, proposal_sd= 0.002 * initial_params)
+
+    println("The initial parameters were:")
     println("epsilon_rabbits: $(initial_params[1])")
     println("gamma_rabbits: $(initial_params[2])")
     println("epsilon_foxes: $(initial_params[3])")
     println("gamma_foxes: $(initial_params[4])")
+
     # Discard burn-in period (first 20% of samples)
     burnin = Int(round(n_samples * 0.2))
     samples_post_burnin = samples[(burnin+1):end, :]
     
-    # Plot results
     println("Plotting results...")
     plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, samples_post_burnin)
         
     return samples_post_burnin
 end
 
-# Run the analysis
 samples = main()
-println("Done! Check the output figures for results.")
+println("Done!")
