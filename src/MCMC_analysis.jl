@@ -84,7 +84,7 @@ using Distributions
 
 
 
-function log_likelihood(params, t, rabbits_obs, foxes_obs; sigma_rabbits=2.0, sigma_foxes=2.0)
+function log_likelihood(params, t, rabbits_obs, foxes_obs; sigma_rabbits=20.0, sigma_foxes=20.0)
     """
     Calculate the log-likelihood of the model given the parameters and observed data.
 
@@ -316,15 +316,15 @@ function plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, sampl
     ylabel!(p2, "Fox population")
     
     p_combined = plot(p1, p2, layout=(2, 1), size=(1200, 900))
-    savefig(p_combined, "./imgs/MCMC/population_fit.png")
+    savefig(p_combined, "../imgs/MCMC/population_fit.png")
     
     p_trace = plot(samples, layout=(4, 1), labels=reshape(param_names, 1, 4), 
                  title=["Trace of epsilon_rabbits" "Trace of gamma_rabbits" "Trace of epsilon_foxes" "Trace of gamma_foxes"], size=(1200, 900))
-    savefig(p_trace, "./imgs/MCMC/parameter_traces.png")
+    savefig(p_trace, "../imgs/MCMC/parameter_traces.png")
     
     p_hist = histogram(samples, layout=(2, 2), labels=reshape(param_names, 1, 4),
                     title=["Posterior of epsilon_rabbits" "Posterior of gamma_rabbits" "Posterior of epsilon_foxes" "Posterior of gamma_foxes"], size=(1200, 900))
-    savefig(p_hist, "./imgs/MCMC/parameter_posteriors.png")
+    savefig(p_hist, "../imgs/MCMC/parameter_posteriors.png")
     
     return p_combined, p_trace, p_hist
 end
@@ -380,7 +380,7 @@ function main()
     xlabel!(p_data, "Time")
     ylabel!(p_data, "Population")
     title!(p_data, "Synthetic Data")
-    savefig(p_data, "./imgs/MCMC/synthetic_data.png")
+    savefig(p_data, "../imgs/MCMC/synthetic_data.png")
     
     initial_params = true_params .* (1 .+ randn(length(true_params)))  # Initial guess (perturbed true parameters)
     initial_params = max.(initial_params, [0.001, 0.00001, 0.001, 0.00001]) # Ensure parameters are positive
@@ -393,9 +393,9 @@ function main()
     
     log_post = params -> log_posterior(params, t, rabbits_obs, foxes_obs)
     
-    n_samples = 20000
+    n_samples = 200000
     println("Running Metropolis-Hastings MCMC with $n_samples samples...")
-    samples, acceptance_rate = metropolis_hastings(log_post, initial_params, n_samples, proposal_sd= 0.002 * initial_params)
+    samples, acceptance_rate = metropolis_hastings(log_post, initial_params, n_samples, proposal_sd= 0.010 * initial_params)
 
     println("The initial parameters were:")
     println("epsilon_rabbits: $(initial_params[1])")
