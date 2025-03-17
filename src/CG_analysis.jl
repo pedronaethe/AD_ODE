@@ -6,6 +6,7 @@ using Distributions
 using Random
 using LinearAlgebra
 using Printf
+using LineSearches
 
 """
 This file is responsible for the CG analysis of the rabbits and foxes model using a ForwardDiff package to calculate the gradient of the cost function.
@@ -48,7 +49,7 @@ function solve_system(p; u0=[1000.0, 20.0], tspan=(0.0, 100.0), solver= Rodas5P(
     """
 
     prob = ODEProblem(func, u0, tspan, p)
-    sol = solve(prob, solver, saveat=saveat, reltol=reltol, abstol=abstol, verbose = true)
+    sol = solve(prob, solver, saveat=saveat, reltol=reltol, abstol=abstol, verbose = false)
     return sol
 end
 
@@ -117,6 +118,7 @@ function plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, pred_
     """
     
     # Solve system with median parameters
+    #println("Predicted parameters: $(pred_params)")
     sol_pred = solve_system(pred_params, tspan=(0.0, 100.0), saveat=t)
     rabbits_pred = sol_pred[1, :]
     foxes_pred = sol_pred[2, :]
@@ -133,17 +135,17 @@ function plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, pred_
     xlabel!(p2, "Time")
     ylabel!(p2, "Fox population")
     p_combined = plot(p1, p2, layout=(2, 1), size=(1200, 900))
-    savefig(p_combined, "../imgs/CG/population_fit.png")
+    savefig(p_combined, "./imgs/CG/population_fit.png")
 
     p_cost_history = plot(cost_history, xlabel="Iterations", ylabel="Quadratic error", title="Predicted vs Data Error History", size=(1200, 900))
-    savefig(p_cost_history, "../imgs/CG/cost_history.png")
+    savefig(p_cost_history, "./imgs/CG/cost_history.png")
 
     param_names = ["epsilon_rabbits", "gamma_rabbits", "epsilon_foxes", "gamma_foxes"]
     p_history = plot(size=(1200, 900), layout=(4, 1))
     for i in 1:4
         plot!(p_history[i], 1:length(history), getindex.(history, i), xlabel="Iterations", ylabel=param_names[i], label=param_names[i])
     end
-    savefig(p_history, "../imgs/CG/parameter_history.png")
+    savefig(p_history, "./imgs/CG/parameter_history.png")
 end
 
 # Cost function - Mean squared error between model and data
@@ -234,6 +236,7 @@ function line_search(fcost, current_params, direction, initial_step=1., α=1e-4,
     min_params = [1e-6,1e-6,1e-6,1e-6]
     max_params = [0.1,0.1,0.1,0.1]
     grad = numerical_gradient(fcost, current_params)
+    fcost_new = 0.0
     for _ in 1:max_iter
         new_params = current_params + step * direction
         
@@ -245,13 +248,83 @@ function line_search(fcost, current_params, direction, initial_step=1., α=1e-4,
         
         # Armijo condition: f(x + step*d) <= f(x) + α * step * dot(grad, direction)
         if fcost_new <= fcost_x + α * step * dot(grad, direction)
-            return step
+            break
         else
             step *= β
         end
     end
+
+    new_params = current_params + step * direction
+    if(any(new_params .> max_params) || any(new_params .< min_params))
+        error("Parameters out of bounds")
+    end
+
+
     
-    return step
+    return step, new_params, fcost_new 
+end
+
+
+function line_search_pkg(fcost, current_params, direction, initial_step=1.)
+    """
+    Line search using the LineSearches package to find the optimal step size.
+
+    Parameters:
+    @fcost - cost function
+    @current_params - current parameters at each iteration of CG algorithm [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
+    @direction - direction of the - gradient
+    @initial_step - initial step size
+
+    Variables:
+    @min_params - minimum values that parameters can take
+    @max_params - maximum values that parameters can take
+    @ϕ - objective function along the line
+    @dϕ - derivative of the objective function along the line
+    @dϕ0 - directional derivative at the initial point
+    @α0 - initial step size
+    @ϕ0 - objective function value at the initial point
+    @grad0 - gradient at the initial point
+    @step_size - optimal step size
+    @new_params - new parameters after updating (current_parameters + step_size * direction)
+
+    Observations:
+    This function uses the LineSearches package to find the optimal step size. This package has several line search algorithms implemented: Static, BackTracking, HagerZhang, MoreThuente, StrongWolfe.
+    I've chosen the BackTracking algorithm because it is the one that I've implemented in the line_search function.
+    
+    I based myself on the simple one-dimensional algorithm in the https://github.com/JuliaNLSolvers/LineSearches.jl page.
+
+    """
+    min_params = [1e-6,1e-6,1e-6,1e-6]
+    max_params = [0.1,0.1,0.1,0.1]
+
+    ϕ(t) = fcost(current_params + t * direction)
+    function dϕ(t)
+        grad = numerical_gradient(fcost, current_params + t * direction)
+        return dot(grad, direction)
+    end
+    
+    function ϕdϕ(t)
+        f_val = ϕ(t)
+        df_val = dϕ(t)
+        return f_val, df_val
+    end
+    
+    α0 = initial_step
+    ϕ0 = fcost(current_params)
+    grad0 = numerical_gradient(fcost, current_params)
+    dϕ0 = dot(grad0, direction)
+    
+    step_size, f_val = (BackTracking())(ϕ, dϕ, ϕdϕ, α0, ϕ0, dϕ0)
+    new_params = current_params + step_size * direction
+
+    #In case the step size is too large, we reduce it by half until the parameters are within the bounds
+    while(any(new_params .> max_params) || any(new_params .< min_params))
+        step_size *= 0.5
+        new_params = current_params + step_size * direction
+    end
+
+    return step_size, new_params, f_val
+
 end
 
 
@@ -298,14 +371,13 @@ function conjugate_gradient(cost_func, initial_params, max_iter=200, tol=1e-6)
     max_params = [0.1,0.1,0.1,0.1]
     
     for iter in 1:max_iter
-        step_size = line_search(cost_func, old_params, direction)
-        
-
-        new_params = old_params + step_size * direction
-        if(any(new_params .> max_params) || any(new_params .< min_params))
-            error("Parameters out of bounds")
+        if(true)
+            #use line search package function
+            step_size, new_params, cost_new= line_search(cost_func, old_params, direction)
+        else
+            #use line search handmaid function 
+            step_size, new_params, cost_new= line_search_pkg(cost_func, old_params, direction)
         end
-
         grad_new = numerical_gradient(cost_func, new_params)
         
         denom = dot(grad, grad)
@@ -322,7 +394,8 @@ function conjugate_gradient(cost_func, initial_params, max_iter=200, tol=1e-6)
         grad = grad_new
             
         push!(history, old_params)
-        push!(cost_history, cost_func(old_params))
+        push!(cost_history, cost_new)
+
         
         if(cost_func(old_params) < 1)
             println("Converged in $iter iterations")
@@ -394,7 +467,7 @@ function main()
     xlabel!(p_data, "Time")
     ylabel!(p_data, "Population")
     title!(p_data, "Synthetic Data")
-    savefig(p_data, "../imgs/CG/synthetic_data.png")
+    savefig(p_data, "./imgs/CG/synthetic_data.png")
     
     initial_params = true_params .* (1 .+ randn(length(true_params)))  # Initial guess (perturbed true parameters)
     initial_params = max.(initial_params, [0.001, 0.00001, 0.001, 0.00001]) # Ensure parameters are positive
@@ -407,12 +480,9 @@ function main()
     #foxes_obs = true_foxes
     
     cost_func = params -> cost_function(params, rabbits_obs, foxes_obs, t)
-    n_samples = 100000
+    n_samples = 200000
     println("Running Conjugate Gradient approach with $n_samples samples...")
     estimated_params, history, cost_history  = conjugate_gradient(cost_func, initial_params, n_samples)
-
-    println("Plotting results...")
-    plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, estimated_params, history, cost_history)
     # Print results
     param_names = ["epsilon_rabbits", "gamma_rabbits", "epsilon_foxes", "gamma_foxes"]
 
@@ -433,6 +503,9 @@ function main()
     println("Noise level used: $(0.1 * 100)%")
     println("Number of iterations: $(length(cost_history))")
     println("Final cost: $(cost_history[end])")
+    
+    println("Plotting results...")
+    plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, estimated_params, history, cost_history)
 end
         
 

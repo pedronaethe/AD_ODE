@@ -4,6 +4,7 @@ using Plots
 using StatsBase
 using Distributions
 using Random
+using Dates
 
 """
 This file is responsible for the MCMC analysis of the rabbits and foxes model using a hand made metropolis hastings algorithm.
@@ -46,7 +47,7 @@ function solve_system(p; u0=[1000.0, 20.0], tspan=(0.0, 100.0), solver=Midpoint(
     return sol
 end
 
-function generate_synthetic_data(true_params; noise_level=0.05, seed=498)
+function generate_synthetic_data(true_params; noise_level=0.05, seed=nothing)
     """
     Generate synthetic data for the model.
 
@@ -60,9 +61,11 @@ function generate_synthetic_data(true_params; noise_level=0.05, seed=498)
     @rabbits_obs - observed rabbits
     @foxes_obs - observed foxes
     """
-
+    if seed === nothing
+        seed = Int(Int(floor(datetime2unix(Dates.now()))))  # Use current time to generate a seed if none is provided
+    end
+    Random.seed!(seed)  # Set the seed
     println("Using seed: $seed")
-    Random.seed!(seed)
     
     sol = solve_system(true_params, tspan=(0.0, 100.0), saveat=5.0)
     
@@ -84,7 +87,7 @@ using Distributions
 
 
 
-function log_likelihood(params, t, rabbits_obs, foxes_obs; sigma_rabbits=20.0, sigma_foxes=20.0)
+function log_likelihood(params, t, rabbits_obs, foxes_obs; sigma_rabbits=0.01, sigma_foxes=0.01)
     """
     Calculate the log-likelihood of the model given the parameters and observed data.
 
@@ -150,7 +153,7 @@ function log_prior(params)
     @params - model parameters [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
 
     Variables:
-    @priors - list of prior distributions for each parameter
+    @priors - list of prior distributions for each parameter in the same order as params
     @log_p - sum of log-priors
 
     Observations:
@@ -159,18 +162,16 @@ function log_prior(params)
     logpdf(Uniform(a,b), x) = - log(b - a)
     """
     priors = [
-        Uniform(0, 0.1),     # epsilon_rabbits
-        Uniform(0, 0.001),   # gamma_rabbits
-        Uniform(0.0, 0.1),     # epsilon_foxes
-        Uniform(0.0, 0.001)    # gamma_foxes
+        Uniform(0, 0.1),     
+        Uniform(0, 0.001),   
+        Uniform(0.0, 0.1),    
+        Uniform(0.0, 0.001)    
     ]
     
-    # Calculate log prior
     log_p = sum(logpdf.(priors, params))
     return log_p
 end
 
-# Log posterior (proportional to)
 function log_posterior(params, t, rabbits_obs, foxes_obs)
     """
     Calculate the log-posterior of the model given the parameters and observed data.
@@ -316,15 +317,15 @@ function plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, sampl
     ylabel!(p2, "Fox population")
     
     p_combined = plot(p1, p2, layout=(2, 1), size=(1200, 900))
-    savefig(p_combined, "../imgs/MCMC/population_fit.png")
+    savefig(p_combined, "./imgs/MCMC/population_fit.png")
     
     p_trace = plot(samples, layout=(4, 1), labels=reshape(param_names, 1, 4), 
                  title=["Trace of epsilon_rabbits" "Trace of gamma_rabbits" "Trace of epsilon_foxes" "Trace of gamma_foxes"], size=(1200, 900))
-    savefig(p_trace, "../imgs/MCMC/parameter_traces.png")
+    savefig(p_trace, "./imgs/MCMC/parameter_traces.png")
     
     p_hist = histogram(samples, layout=(2, 2), labels=reshape(param_names, 1, 4),
                     title=["Posterior of epsilon_rabbits" "Posterior of gamma_rabbits" "Posterior of epsilon_foxes" "Posterior of gamma_foxes"], size=(1200, 900))
-    savefig(p_hist, "../imgs/MCMC/parameter_posteriors.png")
+    savefig(p_hist, "./imgs/MCMC/parameter_posteriors.png")
     
     return p_combined, p_trace, p_hist
 end
@@ -380,22 +381,22 @@ function main()
     xlabel!(p_data, "Time")
     ylabel!(p_data, "Population")
     title!(p_data, "Synthetic Data")
-    savefig(p_data, "../imgs/MCMC/synthetic_data.png")
+    savefig(p_data, "./imgs/MCMC/synthetic_data.png")
     
     initial_params = true_params .* (1 .+ randn(length(true_params)))  # Initial guess (perturbed true parameters)
     initial_params = max.(initial_params, [0.001, 0.00001, 0.001, 0.00001]) # Ensure parameters are positive
-
+    
     println("Starting MCMC with initial parameters:")
     println("epsilon_rabbits: $(initial_params[1])")
     println("gamma_rabbits: $(initial_params[2])")
     println("epsilon_foxes: $(initial_params[3])")
     println("gamma_foxes: $(initial_params[4])")
-    
+
     log_post = params -> log_posterior(params, t, rabbits_obs, foxes_obs)
     
     n_samples = 200000
     println("Running Metropolis-Hastings MCMC with $n_samples samples...")
-    samples, acceptance_rate = metropolis_hastings(log_post, initial_params, n_samples, proposal_sd= 0.010 * initial_params)
+    samples, acceptance_rate = metropolis_hastings(log_post, initial_params, n_samples, proposal_sd= 0.001 * initial_params)
 
     println("The initial parameters were:")
     println("epsilon_rabbits: $(initial_params[1])")

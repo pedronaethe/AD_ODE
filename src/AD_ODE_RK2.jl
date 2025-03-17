@@ -189,31 +189,31 @@ function plot_and_save(sol)
     
     plot(t, rabbits, xlabel="Time", ylabel="Rabbits", title="Population over time", lw=2, label = "Rabbits")    
     plot!(t, foxes, label ="Foxes", lw=2)
-    savefig("../imgs/population.png")
+    savefig("./imgs/population.png")
     
     plot(t, drabbits_de1, xlabel="Time", ylabel="dY", title="dY/de1", lw=2, label = "dRabbits/de1")    
     plot!(t, dfoxes_de1, label = "dFoxes/de1", lw=2)
-    savefig("../imgs/derivative_e1.png")
+    savefig("./imgs/derivative_e1.png")
 
     plot(t, drabbits_dg1, xlabel="Time", ylabel="dY", title="dY/dg1", lw=2, label = "dRabbits/dg1")
     plot!(t, dfoxes_dg1, label = "dFoxes/dg1", lw=2)
-    savefig("../imgs/derivative_g1.png")
+    savefig("./imgs/derivative_g1.png")
 
     plot(t, drabbits_de2, xlabel="Time", ylabel="dY", title="dY/de2", lw=2, label = "dRabbits/de2")
     plot!(t, dfoxes_de2, label = "dFoxes/de2", lw=2)
-    savefig("../imgs/derivative_e2.png")
+    savefig("./imgs/derivative_e2.png")
 
     plot(t, drabbits_dg2, xlabel="Time", ylabel="dY", title="dY/dg2", lw=2, label = "dRabbits/dg2")
     plot!(t, dfoxes_dg2, label = "dFoxes/dg2", lw=2)
-    savefig("../imgs/derivative_g2.png")
+    savefig("./imgs/derivative_g2.png")
 
     plot(t, drabbits_dnrabbits0, xlabel="Time", ylabel="dY", title="dY/dnrabbits0", lw=2, label = "dRabbits/dnrabbits0")
     plot!(t, dfoxes_dnrabbits0, label = "dFoxes/dnrabbits0", lw=2)
-    savefig("../imgs/derivative_rab0.png")
+    savefig("./imgs/derivative_rab0.png")
 
     plot(t, drabbits_dnfoxes0, xlabel="Time", ylabel="dY", title="dY/dnfoxes0", lw=2, label = "dRabbits/dnfoxes0")
     plot!(t, dfoxes_dnfoxes0, label = "dFoxes/dnfoxes0", lw=2)
-    savefig("../imgs/derivative_fox0.png")
+    savefig("./imgs/derivative_fox0.png")
 
     return
 end
