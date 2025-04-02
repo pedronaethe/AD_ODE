@@ -8,48 +8,150 @@ using LinearAlgebra
 using Printf
 using LineSearches
 
+
+
 """
 This file is responsible for the CG analysis of the rabbits and foxes model using a ForwardDiff package to calculate the gradient of the cost function.
 """
 
-function func(du, u, p, t)
+function rabbits_ODE(nrabbits, nfoxes, epsilon, gamma)
     """
-    This function defines the system of ODEs for the rabbits and foxes model.
-    
+    ODE responsible to calculate the rabbits population over time.
+
     Parameters:
-    @du - derivative of the state variables
-    @u - state variables [nrabbits, nfoxes]
-    @p - parameters [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
-    @t - time
+    @nrabbits: number of rabbits.
+    @nfoxes: number of foxes.
+    @epsilon: parameter that controls the growth of the rabbits population.
+    @gamma: parameter that controls the decrease of the rabbits population.
     """
-    nrabbits, nfoxes = u[1], u[2]
-    epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes = p
-    
-    du[1] = (epsilon_rabbits - gamma_rabbits * nfoxes) * nrabbits
-    du[2] = -(epsilon_foxes - gamma_foxes * nrabbits) * nfoxes
+    return (epsilon - gamma * nfoxes) * nrabbits
 end
 
-function solve_system(p; u0=[1000.0, 20.0], tspan=(0.0, 100.0), solver= Rodas5P(), saveat=5, reltol=1e-5, abstol=1e-5)
+function foxes_ODE(nrabbits, nfoxes, epsilon, gamma)
     """
-    This function solves the system of ODEs with simpler state variables (just rabbits and foxes).
+    ODE responsible to calculate the foxes population over time.
+
+    Parameters:
+    @nrabbits: number of rabbits.
+    @nfoxes: number of foxes.
+    @epsilon: parameter that controls the growth of the foxes population.
+    @gamma: parameter that controls the decrease of the foxes population.
+    """
+    return -(epsilon-gamma * nrabbits) * nfoxes
+end
+
+function system(nrabbits, nfoxes, epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes)
+    """
+    This function packs the system of ODEs so I can pass this as a sole function to the ForwardDiff.jacobian.
     
     Parameters:
-    @p - parameters [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes]
-    @u0 - initial conditions [rabbits0, foxes0]
-    @tspan - time span (start_time, end_time)
-    @solver - ODE solver algorithm
-    @saveat - time points to save at
+    @nrabbits: number of rabbits.
+    @nfoxes: number of foxes.
+    @epsilon_rabbits: parameter that controls the growth of the rabbits population.
+    @gamma_rabbits: parameter that controls the decrease of the rabbits population.
+    @epsilon_foxes: parameter that controls the growth of the foxes population.
+    @gamma_foxes: parameter that controls the decrease of the foxes population.
+    """
+    f1 = rabbits_ODE(nrabbits, nfoxes, epsilon_rabbits, gamma_rabbits)
+    f2 = foxes_ODE(nrabbits, nfoxes, epsilon_foxes, gamma_foxes)
+    return [f1, f2]
+end
 
-    Variables:
-    @prob - ODE problem
-    @sol - solution of the ODE system
+
+function func(du, u, p, t)
+
+    """
+    This function declares the system of ODEs that are going to be solved by solve.
+
+    Parameters:
+    @du is the derivative of the state variables.
+    @u is the state variables.
+    @p is the parameters.
+    @t is the time (Right now the system is time-independent, but generalizing it should be easy).
 
     Observations:
-    Change verbose to false if you don't want to see the solver warnings.
-    """
+    The indexes are organized as following
+    @du and @u = [
+        1  - drabbits/dt,       2  - dfoxes/dt,
+        3  - drabbits/de1,      4  - dfoxes/de1,
+        5  - drabbits/dg1,      6  - dfoxes/dg1,
+        7  - drabbits/de2,      8  - dfoxes/de2,
+        9  - drabbits/dg2,      10 - dfoxes/dg2,
+        11 - drabbits/dnrabbits0, 12 - dfoxes/dnrabbits0,
+        13 - drabbits/dnfoxes0, 14 - dfoxes/dnfoxes0
+    ]
 
+    @p = [epsilon_rabbits, gamma_rabbits, epsilon_foxes, gamma_foxes, nrabbits0, nfoxes0]
+
+    @jacobian_matrix format is:
+    |df1/dy1 df1/dy2 df1/de1 df1/dgamma1 df1/de2 df1/dgamma2|
+    |df2/dy1 df2/dy2 df2/de1 df2/dgamma1 df2/de2 df2/dgamma2|
+    (2 x 6)
+    """
+    #drabbits/erab and dfoxes/erab
+    jacobian_matrix = ForwardDiff.jacobian(x -> system(x[1], x[2], x[3], x[4], x[5], x[6]), [u[1], u[2], p[1], p[2], p[3], p[4]])
+    
+    # rabbits and foxes derivative with respect to epsilon_rabbits
+    du[3] = jacobian_matrix[1,1] *  u[3] + jacobian_matrix[1,2] * u[4] + jacobian_matrix[1,3]
+    du[4] = (jacobian_matrix[2,2] *  u[4] + jacobian_matrix[2,1] *  u[3])
+
+    # rabbits and foxes derivative with respect to gamma_rabbits
+    du[5] = jacobian_matrix[1,1] *  u[5] + jacobian_matrix[1,2] * u[6] + jacobian_matrix[1,4]
+    du[6] = (jacobian_matrix[2,2] *  u[6] + jacobian_matrix[2,1] *  u[5])
+
+    # rabbits and foxes derivative with respect to epsilon_foxes
+    du[7] = jacobian_matrix[1,1] *  u[7] + jacobian_matrix[1,2] * u[8]
+    du[8] = (jacobian_matrix[2,2] *  u[8] + jacobian_matrix[2,1] *  u[7] + jacobian_matrix[2,5])
+
+    # rabbits and foxes derivative with respect to gamma_foxes
+    du[9] = jacobian_matrix[1,1] *  u[9] + jacobian_matrix[1,2] * u[10]
+    du[10] = (jacobian_matrix[2,2] *  u[10] + jacobian_matrix[2,1] *  u[9] + jacobian_matrix[2,6])
+
+    # rabbits and foxes derivative with respect to nrabbits0      
+    du[11] = jacobian_matrix[1,1] *  u[11] + jacobian_matrix[1,2] * u[12]
+    du[12] = (jacobian_matrix[2,2] *  u[12] + jacobian_matrix[2,1] *  u[11])
+
+    # rabbits and foxes derivative with respect to nfoxes0
+    du[13] = jacobian_matrix[1,1] *  u[13] + jacobian_matrix[1,2] * u[14]
+    du[14] = (jacobian_matrix[2,2] *  u[14] + jacobian_matrix[2,1] *  u[13])
+    
+    #rabbits
+    du[1] = (p[1] - p[2] *u[2]) * u[1]
+    #foxes
+    du[2] = -(p[3] - p[4] * u[1]) * u[2]
+end
+
+function solve_system(p)
+    """
+    This function solves the system of ODEs.
+
+    Parameters:
+    @p is the parameters.
+
+    Variables:
+    @u0 is the initial conditions.
+    @tspan is the time span.
+    @prob is the ODEProblem.
+    @sol is the solution of the system of ODEs.
+
+    
+    Observations:
+    the indexes are organized as follows:
+    @u0 = [
+        1  - rabbits,             2  - foxes,
+        3  - drabbits/de1,        4  - dfoxes/de1,
+        5  - drabbits/dg1,        6  - dfoxes/dg1,
+        7  - drabbits/de2,        8  - dfoxes/de2,
+        9  - drabbits/dg2,        10 - dfoxes/dg2,
+        11 - drabbits/dnrabbits0, 12 - dfoxes/dnrabbits0,
+        13 - drabbits/dnfoxes0,   14 - dfoxes/dnfoxes0
+    ]
+    @tspan = [t0, tf]
+    """
+    u0 = [1000.0, 20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0] 
+    tspan = (0.0, 100.0)
     prob = ODEProblem(func, u0, tspan, p)
-    sol = solve(prob, solver, saveat=saveat, reltol=reltol, abstol=abstol, verbose = false)
+    sol = solve(prob, Rodas5P(), saveat=5.0, verbose=false)
     return sol
 end
 
@@ -70,9 +172,7 @@ function generate_synthetic_data(true_params; noise_level=0.05, seed=498)
 
     println("Using seed: $seed")
     Random.seed!(seed)
-    
-    sol = solve_system(true_params, tspan=(0.0, 100.0), saveat=5.0)
-    
+    sol = solve_system(true_params)
     t = sol.t
     rabbits = sol[1, :]
     foxes = sol[2, :]
@@ -119,7 +219,7 @@ function plot_results(t, rabbits_obs, foxes_obs, true_rabbits, true_foxes, pred_
     
     # Solve system with median parameters
     #println("Predicted parameters: $(pred_params)")
-    sol_pred = solve_system(pred_params, tspan=(0.0, 100.0), saveat=t)
+    sol_pred = solve_system(pred_params)
     rabbits_pred = sol_pred[1, :]
     foxes_pred = sol_pred[2, :]
     
@@ -168,7 +268,7 @@ function cost_function(params, rabbits_obs, foxes_obs, t)
     Observations:
     The cost function is the mean squared error between the observed and predicted populations of rabbits and foxes.
     """
-    sol = solve_system(params, tspan=(0.0, 100.0), saveat=t)
+    sol = solve_system(params)
     nrabbits = sol[1, :]
     nfoxes = sol[2, :]
     
@@ -182,7 +282,7 @@ function cost_function(params, rabbits_obs, foxes_obs, t)
 end
 
 
-function numerical_gradient(fcost, params)
+function numerical_gradient(params, rabbits_obs, foxes_obs)
     """
     Calculate the numerical gradient of the cost function.
     
@@ -194,12 +294,37 @@ function numerical_gradient(fcost, params)
     Since the gradient will point to the direction of greatest increase, we will set this to a negative value in order to point to the direction of error decrease.
     This function uses AD to calculate the gradient of the cost function.
     """
-
+    sol = solve_system(params)
     
-    return ForwardDiff.gradient(params -> fcost(params), params)    
+    rabbits = sol[1, :]
+    foxes = sol[2, :]
+    drabbits_de1 = sol[3, :]
+    dfoxes_de1 = sol[4, :]
+    drabbits_dg1 = sol[5, :]
+    dfoxes_dg1 = sol[6, :]
+    drabbits_de2 = sol[7, :]
+    dfoxes_de2 = sol[8, :]
+    drabbits_dg2 = sol[9, :]
+    dfoxes_dg2 = sol[10, :]
+
+    dcost_drabbits = 2 * (rabbits .- rabbits_obs)/length(rabbits_obs)
+    dcost_dfoxes = 2* (foxes .- foxes_obs)/length(foxes_obs)
+
+    grad = zeros(Float64, 4)
+    grad[1] = sum(dcost_drabbits .* drabbits_de1) + sum(dcost_dfoxes .* dfoxes_de1)
+    #println("grad1:sum 1: $(sum(dcost_drabbits .* drabbits_de1)), sum 2: $(sum(dcost_dfoxes .* dfoxes_de1)), grad[1]: $(grad[1])")
+    grad[2] = sum(dcost_drabbits .* drabbits_dg1) + sum(dcost_dfoxes .* dfoxes_dg1)
+    #println("grad2:sum 1: $(sum(dcost_drabbits .* drabbits_dg1)), sum 2: $(sum(dcost_dfoxes .* dfoxes_dg1)), grad[2]: $(grad[2])")
+    grad[3] = sum(dcost_drabbits .* drabbits_de2) + sum(dcost_dfoxes .* dfoxes_de2)
+    #println("grad3:sum 1: $(sum(dcost_drabbits .* drabbits_de2)), sum 2: $(sum(dcost_dfoxes .* dfoxes_de2)), grad[3]: $(grad[3])")
+    grad[4] = sum(dcost_drabbits .* drabbits_dg2) + sum(dcost_dfoxes .* dfoxes_dg2)
+    #println("grad4:sum 1: $(sum(dcost_drabbits .* drabbits_dg2)), sum 2: $(sum(dcost_dfoxes .* dfoxes_dg2)), grad[4]: $(grad[4])")
+
+   
+    return grad
 end
 
-function line_search(fcost, current_params, direction, initial_step=1., α=1e-4, β=0.7, max_iter=500)
+function line_search(fcost, current_params, direction, grad, initial_step=1., α=1e-4, β=0.7, max_iter=500)
     """
     Backtracking line search with Armijo condition to find optimal step size. 
     Parameters:
@@ -236,7 +361,6 @@ function line_search(fcost, current_params, direction, initial_step=1., α=1e-4,
     fcost_x = fcost(current_params)
     min_params = [1e-6,1e-6,1e-6,1e-6]
     max_params = [0.1,0.1,0.1,0.1]
-    grad = numerical_gradient(fcost, current_params)
     fcost_new = 0.0
     for _ in 1:max_iter
         new_params = current_params + step * direction
@@ -254,10 +378,13 @@ function line_search(fcost, current_params, direction, initial_step=1., α=1e-4,
             step *= β
         end
     end
-
     new_params = current_params + step * direction
-    if(any(new_params .> max_params) || any(new_params .< min_params))
-        error("Parameters out of bounds")
+    for i in 1:length(new_params)
+        if new_params[i] > max_params[i]
+            new_params[i] = max_params[i]
+        elseif new_params[i] < min_params[i]
+            new_params[i] = min_params[i]
+        end
     end
 
 
@@ -266,7 +393,7 @@ function line_search(fcost, current_params, direction, initial_step=1., α=1e-4,
 end
 
 
-function line_search_pkg(fcost, current_params, direction, initial_step=1.)
+function line_search_pkg(fcost, current_params, direction, rabbits_obs, foxes_obs, initial_step=1.)
     """
     Line search using the LineSearches package to find the optimal step size.
 
@@ -300,7 +427,7 @@ function line_search_pkg(fcost, current_params, direction, initial_step=1.)
 
     ϕ(t) = fcost(current_params + t * direction)
     function dϕ(t)
-        grad = numerical_gradient(fcost, current_params + t * direction)
+        grad = numerical_gradient(current_params + t * direction, rabbits_obs, foxes_obs)
         return dot(grad, direction)
     end
     
@@ -312,7 +439,7 @@ function line_search_pkg(fcost, current_params, direction, initial_step=1.)
     
     α0 = initial_step
     ϕ0 = fcost(current_params)
-    grad0 = numerical_gradient(fcost, current_params)
+    grad0 = numerical_gradient(current_params, rabbits_obs, foxes_obs)
     dϕ0 = dot(grad0, direction)
     
     step_size, f_val = (BackTracking())(ϕ, dϕ, ϕdϕ, α0, ϕ0, dϕ0)
@@ -329,7 +456,7 @@ function line_search_pkg(fcost, current_params, direction, initial_step=1.)
 end
 
 
-function conjugate_gradient(cost_func, initial_params, max_iter=200, tol=1e-6)
+function conjugate_gradient(cost_func, initial_params, rabbits_obs, foxes_obs, max_iter=200, tol=1e-6)
     """
     Conjugate gradient optimization algorithm.
 
@@ -363,23 +490,20 @@ function conjugate_gradient(cost_func, initial_params, max_iter=200, tol=1e-6)
     """
 
     old_params = copy(initial_params)
-    grad = numerical_gradient(cost_func, old_params)
+    grad = numerical_gradient(old_params, rabbits_obs, foxes_obs)
     direction = -grad
     
     history = [old_params]
     cost_history = [cost_func(old_params)]
-    min_params = [1e-6,1e-6,1e-6,1e-6]
-    max_params = [0.1,0.1,0.1,0.1]
-    
     for iter in 1:max_iter
         if(true)
             #use line search package function
-            step_size, new_params, cost_new= line_search(cost_func, old_params, direction)
+            step_size, new_params, cost_new= line_search(cost_func, old_params, direction, grad)
         else
             #use line search handmaid function 
-            step_size, new_params, cost_new= line_search_pkg(cost_func, old_params, direction)
+            step_size, new_params, cost_new= line_search_pkg(cost_func, old_params, direction, rabbits_obs, foxes_obs)
         end
-        grad_new = numerical_gradient(cost_func, new_params)
+        grad_new = numerical_gradient(new_params, rabbits_obs, foxes_obs)
         
         denom = dot(grad, grad)
         # Fletcher-Reeves formula
@@ -408,9 +532,10 @@ function conjugate_gradient(cost_func, initial_params, max_iter=200, tol=1e-6)
             break
         end
         
-        if iter % 100 == 0
+        if iter % 1 == 0
             println("Iteration $iter: Cost = $(cost_func(old_params)), Gradient norm = $(norm(grad))", " step size: $step_size")
             println("Parameters: $old_params")
+            println("gradient: $grad")
         end
     end
     
@@ -451,6 +576,7 @@ function main()
 
 
     true_params = [0.015, 0.0001, 0.03, 0.0001]
+    noise_level = 0.1
     
     println("Generating synthetic data with true parameters:")
     println("epsilon_rabbits: $(true_params[1])")
@@ -458,8 +584,8 @@ function main()
     println("epsilon_foxes: $(true_params[3])")
     println("gamma_foxes: $(true_params[4])")
     
-    t, rabbits_obs, foxes_obs, true_rabbits, true_foxes = generate_synthetic_data(true_params, noise_level=0.1)
-    
+    t, rabbits_obs, foxes_obs, true_rabbits, true_foxes = generate_synthetic_data(true_params, noise_level=noise_level)
+    println("Done!")
     # Plotting synthetic data so we can easily compare perturbed to unperturbed data
     p_data = plot(t, rabbits_obs, seriestype=:scatter, label="Observed rabbits", markersize=3)
     plot!(p_data, t, foxes_obs, seriestype=:scatter, label="Observed foxes", markersize=3)
@@ -483,7 +609,7 @@ function main()
     cost_func = params -> cost_function(params, rabbits_obs, foxes_obs, t)
     n_samples = 200000
     println("Running Conjugate Gradient approach with $n_samples samples...")
-    estimated_params, history, cost_history  = conjugate_gradient(cost_func, initial_params, n_samples)
+    estimated_params, history, cost_history  = conjugate_gradient(cost_func, initial_params, rabbits_obs, foxes_obs, n_samples)
     # Print results
     param_names = ["epsilon_rabbits", "gamma_rabbits", "epsilon_foxes", "gamma_foxes"]
 
@@ -501,7 +627,7 @@ function main()
     # Calculate mean absolute percentage error
     mape = mean(abs.(estimated_params .- true_params) ./ true_params) * 100
     println("\nMean Absolute Percentage Error: $(round(mape, digits=2))%")
-    println("Noise level used: $(0.1 * 100)%")
+    println("Noise level used: $(noise_level * 100)%")
     println("Number of iterations: $(length(cost_history))")
     println("Final cost: $(cost_history[end])")
     
