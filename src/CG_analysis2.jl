@@ -151,7 +151,7 @@ function solve_system(p)
     u0 = [1000.0, 20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0] 
     tspan = (0.0, 100.0)
     prob = ODEProblem(func, u0, tspan, p)
-    sol = solve(prob, Rodas5P(), saveat=5.0, verbose=false)
+    sol = solve(prob, Rodas5P(), saveat=5.0, verbose=true)
     return sol
 end
 
@@ -542,6 +542,41 @@ function conjugate_gradient(cost_func, initial_params, rabbits_obs, foxes_obs, m
     return old_params, history, cost_history
 end
 
+function gradient_descent(cost_func, initial_params, rabbits_obs, foxes_obs, max_iter=200, tol=1e-6)
+    gamma = 1.e-18
+    old_params = initial_params
+    grad = numerical_gradient(old_params, rabbits_obs, foxes_obs)
+    for iter in 1:max_iter
+        new_params = old_params - gamma * grad
+        grad_new = numerical_gradient(new_params, rabbits_obs, foxes_obs)
+
+        if (norm(grad_new) < tol)
+            println("Converged in $iter iterations")
+            break
+        end
+        if (cost_func(new_params) < 1)
+            println("Converged in $iter iterations")
+            break
+        end
+
+        if(cost_func(new_params) > cost_func(old_params))
+            println("Cost function increased")
+        end
+
+        if iter % 1 == 0
+            println("Iteration $iter: Cost = $(cost_func(old_params)), Gradient norm = $(norm(grad))", " step size: $gamma")
+            println("Parameters: $old_params")
+            println("gradient: $grad \n")
+        end
+        #calculate gamma according to barzlai-borwein methods
+        gamma = norm((new_params .- old_params) .* (grad_new .- grad))/ (norm(grad_new .- grad)^2)
+        # Update parameters
+        old_params = new_params
+        grad = grad_new
+
+    end
+end
+
 # Main execution
 function main()
     """
@@ -576,7 +611,7 @@ function main()
 
 
     true_params = [0.015, 0.0001, 0.03, 0.0001]
-    noise_level = 0.1
+    noise_level = 0.0
     
     println("Generating synthetic data with true parameters:")
     println("epsilon_rabbits: $(true_params[1])")
@@ -610,6 +645,11 @@ function main()
     n_samples = 200000
     println("Running Conjugate Gradient approach with $n_samples samples...")
     estimated_params, history, cost_history  = conjugate_gradient(cost_func, initial_params, rabbits_obs, foxes_obs, n_samples)
+
+    #if you want to gradient descent, uncomment the two lines below and comment the two lines above
+    #println("Running Gradient descent approach with $n_samples samples...")
+    #gradient_descent(cost_func, initial_params, rabbits_obs, foxes_obs, n_samples)
+    println("Done!")
     # Print results
     param_names = ["epsilon_rabbits", "gamma_rabbits", "epsilon_foxes", "gamma_foxes"]
 
