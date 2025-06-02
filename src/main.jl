@@ -1,0 +1,209 @@
+using Printf
+using Base.Threads
+using LinearAlgebra
+
+mutable struct Params
+    xoff::Float64
+    yoff::Float64
+    nx::Int
+    ny::Int
+    rotcam::Float64
+    eps::Float64
+    maxnstep::Int
+end
+
+mutable struct OfTraj
+    dl::Float64
+    X::Vector{Float64}
+    Kcon::Vector{Float64}
+    Xhalf::Vector{Float64}
+    Kconhalf::Vector{Float64}
+end
+
+include("camera.jl")
+include("debug_functions.jl")
+include("metrics.jl")
+include("coords.jl")
+include("tetrads.jl")
+include("utils.jl")
+include("radiation.jl")
+include("analytic.jl")
+include("geodesics.jl")
+include("constants.jl")
+
+
+function get_pixel(i::Int, j::Int, Xcam::Vector{Float64}, params::Params, fovx::Float64, fovy::Float64, freq::Float64)
+    """
+    Evolves the geodesic and integrate emissivity along the geodesic for each pixel.
+    Parameters:
+    @i: x-index of the pixel in the image plane.
+    @j: y-index of the pixel in the image plane.
+    @Xcam: Position vector of the camera in internal coordinates.
+    @params: Parameters for the camera.
+    @fovx: Field of view in the x-direction.
+    @fovy: Field of view in the y-direction.
+    @freq: Frequency of the radiation.
+    """
+    X = zeros(Float64, NDIM)
+    Kcon = zeros(Float64, NDIM)
+
+    X, Kcon = init_XK(i, j, Xcam, params, fovx, fovy)
+
+    for mu in 1:NDIM
+        Kcon[mu] *= freq
+    end
+    traj = Vector{OfTraj}()
+    sizehint!(traj, params.maxnstep)  
+    nstep = trace_geodesic(X, Kcon, traj, params.eps, params.maxnstep, i, j)
+    resize!(traj, length(traj)) 
+
+    # if(i == 0 && j == 0)
+    #     for i in 1:nstep
+    #         r, th = bl_coord(traj[i].X)
+    #         @printf("Step %d: R = %.15e, Theta = %.15e\n", i, r, th)
+    #         @printf("Kcon: [%.15e, %.15e, %.15e, %.15e]\n", traj[i].Kcon[1], traj[i].Kcon[2], traj[i].Kcon[3], traj[i].Kcon[4])
+    #     end
+    # end
+    if nstep >= params.maxnstep - 1
+        @error "Max number of steps exceeded at pixel ($i, $j)"
+    end
+
+    return traj, nstep
+end
+
+
+
+function main()
+    @time begin
+        println()
+        println("Model Parameters: A = $A, α = $α, height = $height, l0 = $l0, alpha = $α")
+        println("MBH = $MBH, L_unit = $L_unit")
+        println("Rstop = $Rstop, Rh = $Rh")
+        nx, ny = 128,128
+        freqcgs = 230e9
+        freq = freqcgs * HPL/(ME * CL * CL) 
+        cam_dist, cam_theta_angle, cam_phi_angle = 1000.0, 60., 0.
+        Dsource = 7.778e3 * PC
+        Xcam = camera_position(cam_dist, cam_theta_angle, cam_phi_angle)
+        p = Params(0.0, 0.0, nx, ny, 0.0, 0.01, 50000)
+        DX = 30.0
+        DY = 30.0
+        Image =  zeros(Float64, nx, ny)
+        fovx = DX/cam_dist
+        fovy = DY/cam_dist
+        scale_factor = (DX * L_unit / nx) * (DY * L_unit / ny) / (Dsource * Dsource) / JY;
+
+        @printf("DX = %.15e, L_unit = %.15e, Dsource = %.15e, nx = %d, ny = %d, DY = %.15e, JY = %.15e\n",
+            DX, L_unit, Dsource, nx, ny, DY, JY);
+
+        println("Camera position: Xcam = [$(Xcam[1]), $(Xcam[2]), $(Xcam[3]), $(Xcam[4])]")
+        println("fovx = $fovx, fovy = $fovy")
+        println("DX = $DX, DY = $DY")
+        println("Running on ", Threads.nthreads(), " threads")
+
+        for i in 0:(nx - 1)
+            println("Processing pixel row ($i)")
+            Threads.@threads for j in 0:(ny - 1)
+                #Here, we solve the geodesics and save each point of the trajectory
+                traj, nstep, = get_pixel(i, j, Xcam, p, fovx, fovy, freq)
+                # if(i == 2 && j == 1)
+                #     println("Trajectory for pixel ($i, $j):")
+                #     for step in 1:nstep
+                #         r, th = bl_coord(traj[step].X)
+                #         @printf("Step %d: r =%.15e\n", step, r)
+                #         @printf("Kcon = [%.15e, %.15e, %.15e, %.15e]\n", 
+                #             traj[step].Kcon[1], traj[step].Kcon[2], 
+                #             traj[step].Kcon[3], traj[step].Kcon[4])
+                #     end
+                # end
+                Xi = zeros(Float64, NDIM)
+                Kconi = zeros(Float64, NDIM)
+                Xf = zeros(Float64, NDIM)
+                Kconf = zeros(Float64, NDIM)
+
+                for k in 1:NDIM
+                    Xi[k] = traj[nstep].X[k]
+                    Kconi[k] = traj[nstep].Kcon[k]
+                end
+                ji, ki = get_analytic_jk(Xi, Kconi, freqcgs)
+                #println("Pixel ($i, $j) has total nstep = $nstep")
+                Intensity::Float64 = 0.0
+                while(nstep >= 2)
+                    for k in 1:NDIM
+                        Xf[k] = traj[nstep - 1].X[k]
+                        Kconf[k] = traj[nstep - 1].Kcon[k]
+                    end
+
+
+                    if !radiating_region(Xf)
+                        nstep -= 1
+                        continue
+                    end
+
+                    jf, kf = get_analytic_jk(Xf, Kconf, freqcgs)
+
+                    Intensity = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)    
+                    # if(i == 0 && j == 0)
+                    #     r, th = bl_coord(Xf)
+                    #     @printf("At step %d \n", nstep)
+                    #     @printf("Radius = %.15e, theta = %.15e\n", r, th)
+                    #     @printf("X = [%.15e, %.15e, %.15e, %.15e]\n", 
+                    #         Xf[1], Xf[2], Xf[3], Xf[4])
+                    #     @printf("Kcon = [%.15e, %.15e, %.15e, %.15e]\n",
+                    #         Kconf[1], Kconf[2], Kconf[3], Kconf[4])
+                    #     @printf("jf = %.15e, kf = %.15e, Intensity = %.15e\n", jf, kf, Intensity)
+                    #     @printf("ji = %.15e, ki = %.15e\n", ji, ki)
+                    #     @printf("dl = %.15e\n\n", traj[nstep - 1].dl)
+                    # end     
+                    ji = jf
+                    ki = kf
+                    nstep -= 1
+                end 
+                Image[i + 1, j + 1] = Intensity
+                #println("Final intensity at pixel ($i, $j): $Intensity \n")
+                # error("")
+            end
+        end
+
+        Ftot::Float64 = 0.0
+        Iavg::Float64 = 0.0
+        Imax::Float64 = 0.0
+        imax::Int = 0
+        jmax::Int = 0   
+        println("Image processing complete. Calculating total flux and averages...")
+        for i in 1:nx
+            for j in 1:ny
+                Ftot += Image[i, j] * freqcgs^3 * scale_factor
+                Iavg += Image[i, j]
+                if (Image[i,j] * freqcgs^3) > Imax
+                    imax = i
+                    jmax = j
+                    Imax = Image[i, j] * freqcgs^3
+                end
+            end
+        end
+        Iavg *= freqcgs^3/ (nx * ny)
+        @printf("Scale = %.15e\n", scale_factor)
+        println("imax = $imax, jmax = $jmax, Imax = $Imax, Iavg = $Iavg")
+        println("Using freqcgs = $freqcgs, Ftot = $Ftot")
+        println("nuLnu = $(Ftot * Dsource * Dsource * JY * freqcgs * 4.0 * π)")
+
+        open("./output/Image.bin", "w") do file
+            write(file, Image)
+        end
+    end
+end
+
+# Miscellaneous constants
+const a = 0.9
+const Rh = 1 + sqrt(1. - a * a);
+const Rout = 1000.0
+const cstartx = [0.0, log(Rh), 0.0, 0.0]
+const cstopx = [0.0, log(Rout), 1.0, 2.0 * π]
+const R0 = 0
+const Rstop = 10000.0
+const MBH = 4.063e6 * MSUN
+const L_unit = GNEWT * MBH / (CL * CL);
+
+main()
+GC.gc()
