@@ -1,322 +1,17 @@
-using LinearAlgebra
-using Plots
-using Printf
 
-
-const use_eKS_internal = 1
-mutable struct Params
-    old_centering::Bool
-    xoff::Float64
-    yoff::Float64
-    nx::Int
-    ny::Int
-    rotcam::Float64
-    eps::Float64
-    maxnstep::Int
-    dsource::Float64
-end
-
-mutable struct OfTraj
-    dl::Float64
-    X::Vector{Float64}
-    Kcon::Vector{Float64}
-    Xhalf::Vector{Float64}
-    Kconhalf::Vector{Float64}
-end
-
-
-function print_vector(name::String, vec::Vector{Float64})
-    println("Vector: $name")
-    for i in 1:length(vec)
-        print("$(vec[i]) ")
-    end
-    println()
-end
-function print_matrix(name::String, mat::Array{Float64, 2})
-    println("Matrix: $name")
-    for i in 1:size(mat, 1)
-        for j in 1:size(mat, 2)
-            @printf("%.15e ", mat[i, j])
-        end
-        println()
-    end
-end
-
-function gcov_func(X::Vector{Float64})
-    r::Float64 = 0;
-    th::Float64 = 0;
-    r, th = bl_coord(X)
-    gcov::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
-    cth = cos(th)
-    sth = abs(sin(th))
-    if(sth < 1e-40)
-        sth = 1e-40
-    end
-
-    s2 = sth * sth
-    rho2 = r * r + a * a * cth * cth
-
-    tfac = 1.
-    rfac = r - R0
-    hfac = π
-    pfac = 1.
-    gcov[1, 1] = (-1. + 2. * r / rho2) * tfac * tfac
-    gcov[1, 2] = (2. * r / rho2) * tfac * rfac
-    gcov[1, 4] = (-2. * a * r * s2 / rho2) * tfac * pfac
-
-    gcov[2, 1] = gcov[1, 2]
-    gcov[2, 2] = (1. + 2. * r / rho2) * rfac * rfac
-    gcov[2, 4] = (-a * s2 * (1. + 2. * r / rho2)) * rfac * pfac
-    
-    gcov[3, 3] = rho2 * hfac * hfac
-    
-    gcov[4, 1] = gcov[1, 4]
-    gcov[4, 2] = gcov[2, 4]
-    gcov[4, 4] =
-        s2 * (rho2 + a * a * s2 * (1. + 2. * r / rho2)) * pfac * pfac
-    
-        return gcov
-end
-
-function gcon_func(gcov::Array{Float64, 2})
-    return gconKS(gcov)
-end
-
-function gcovKS(r::Float64, th::Float64)
-    cth::Float64 = cos(th)
-    sth::Float64 = sin(th)
-    s2::Float64 = sth * sth
-    rho2::Float64 = r * r + a * a * cth * cth
-
-    gcov::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
-
-    gcov[1, 1] = -1. + 2. * r / rho2
-    gcov[1, 2] = 2. * r / rho2
-    gcov[1, 4] = -2. * a * r * s2 / rho2
-    gcov[2, 1] = gcov[1, 2]
-    gcov[2, 2] = 1. + 2. * r / rho2
-    gcov[2, 4] = -a * s2 * (1. + 2. * r / rho2)
-    gcov[3, 3] = rho2
-    gcov[4, 1] = gcov[1, 4]
-    gcov[4, 2] = gcov[2, 4]
-    gcov[4, 4] = s2 * (rho2 + a * a * s2 * (1. + 2. * r / rho2))
-    
-    return gcov
-end
-
-function gconKS(gcov::Array{Float64, 2})
-    gcon = inv(gcov)
-    if any(isnan.(gcon)) || any(isinf.(gcon))
-        @error "Singular gcov encountered in gconKS!"
-        @info "gcov = $gcov"
-        error("Singular gcov encountered, cannot compute gcon.")
-    end
-    return gcon
-end
-
-function bl_coord(X::Vector{Float64})
-    R0 = 0.0;
-    r = exp(X[2]) + R0;
-    th = π *X[3]
-    return r, th
-end
-
-function flip_index(vector::Vector{Float64}, metric::Array{Float64,2})
-    flipped_vector = zeros(Float64, NDIM)
-    for ν in 1:NDIM
-        for μ in 1:NDIM
-            flipped_vector[ν] += metric[ν, μ] * vector[μ]
-        end
-    end
-    return flipped_vector
-end
-
-function set_Econ_from_trial(defdir::Int, trial::Vector{Float64})
-    Econ::Vector{Float64} = zeros(Float64, 4)
-    norm = sum(abs.(trial[2:4])) 
-    for k in 1:4
-        if norm <= SMALL
-            Econ[k] = (k == defdir) ? 1.0 : 0.0
-        else
-            Econ[k] = trial[k]
-        end
-    end
-    return Econ
-end
-
-function normalize(vcon::Vector{Float64}, Gcov::Array{Float64,2})
-
-    vcon_out = copy(vcon)
-
-    norm = 0.0
-    for k in 1:4
-        for l in 1:4
-            norm += vcon[k] * vcon[l] * Gcov[k, l]
-        end
-    end
-
-    norm = sqrt(abs(norm))
-    for k in 1:4
-        vcon_out[k] /= norm
-    end
-    return vcon_out
-end
-
-function project_out(vcona::Vector{Float64}, vconb::Vector{Float64}, Gcov::Array{Float64,2})
-    vconb_sq = 0.0
-    for k in 1:4
-        for l in 1:4
-            vconb_sq += vconb[k] * vconb[l] * Gcov[k, l]
-        end
-    end
-
-    adotb = 0.0
-    for k in 1:4
-        for l in 1:4
-            adotb += vcona[k] * vconb[l] * Gcov[k, l]
-        end
-    end
-    vcona_out = copy(vcona)
-    for k in 1:4
-        vcona_out[k] -= vconb[k] * adotb / vconb_sq
-    end
-    return vcona_out
-end
-
-function levi_civita(i::Int, j::Int, k::Int, l::Int)
-    return (i == j || i == k || i == l || j == k || j == l || k == l) ? 0 : sign((i - j) * (k - l))
-end
-
-function gdet_func(gcov::Matrix{Float64})
-    F = lu(gcov)
-    U = F.U
-
-    if any(abs(U[i, i]) < 1e-14 for i in 1:size(U, 1))
-        @warn "Singular matrix in gdet_func!"
-        return -1.0
-    end
-
-    gdet = prod(diag(U))
-    return sqrt(abs(gdet))
-end
-
-
-function check_handedness(Econ::Array{Float64,2}, Gcov::Array{Float64,2})
-
-    g = gdet_func(Gcov)
-    if g < 0.0
-        @warn "Encountered singular gcov checking handedness!"
-        return (1, 0.0)
-    end
-    dot_var::Float64 = 0.0
-    for i in 1:4, j in 1:4, l in 1:4, k in 1:4
-        dot_var += g * levi_civita(i-1, j-1, k-1, l-1) * Econ[1, i] * Econ[2, j] * Econ[3, k] * Econ[4, l]
-    end
-
-    return (0, dot_var)
-end
-
-function make_plasma_tetrad(Ucon::Vector{Float64}, Kcon::Vector{Float64}, Bcon::Vector{Float64}, Gcov::Array{Float64, 2})
-
-    Econ::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
-    Ecov::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
-    ones_vector::Vector{Float64} = ones(Float64, NDIM)
-    Econ[1,:] = set_Econ_from_trial(1, Ucon);
-    Econ[2,:] = set_Econ_from_trial(4, ones_vector);
-    Econ[3,:] = set_Econ_from_trial(3, Bcon);
-    Econ[4,:] = set_Econ_from_trial(4, Kcon);
-    Econ[1,:] = normalize(Econ[1,:], Gcov);
-    Econ[4,:] = project_out(Econ[4,:], Econ[1,:], Gcov);
-    Econ[4,:] = project_out(Econ[4,:], Econ[1,:], Gcov);
-    Econ[4,:] = normalize(Econ[4,:], Gcov);
-
-    Econ[3,:] = project_out(Econ[3,:], Econ[1,:], Gcov);
-    Econ[3,:] = project_out(Econ[3,:], Econ[4,:], Gcov);
-    Econ[3,:] = project_out(Econ[3,:], Econ[1,:], Gcov);
-    Econ[3,:] = project_out(Econ[3,:], Econ[4,:], Gcov);
-    Econ[3,:] = normalize(Econ[3,:], Gcov);
-    Econ[2,:] = project_out(Econ[2,:], Econ[1,:], Gcov);
-    Econ[2,:] = project_out(Econ[2,:], Econ[3,:], Gcov);
-    Econ[2,:] = project_out(Econ[2,:], Econ[4,:], Gcov);
-    Econ[2,:] = project_out(Econ[2,:], Econ[1,:], Gcov);
-    Econ[2,:] = project_out(Econ[2,:], Econ[3,:], Gcov);
-    Econ[2,:] = project_out(Econ[2,:], Econ[4,:], Gcov);
-    Econ[2,:] = normalize(Econ[2,:], Gcov);
-    oddflag::Int = 0
-    flag::Int, dot_var::Float64 = check_handedness(Econ, Gcov)
-    
-    if (flag != 0)
-        oddflag |= 0x10 
-    end
-
-    if (abs(abs(dot_var) - 1) > 1e-10 && use_eKS_internal == 0) || (abs(abs(dot_var) - 1) > 1e-7  && use_eKS_internal == 1)
-        oddflag |= 0x1
-    end
-
-    if dot_var < 0
-        for k in 1:4
-            Econ[2, k] *= -1
-        end
-    end
-
-    for k in 1:4
-        Ecov[k, :] = flip_index(Econ[k, :], Gcov)
-    end
-
-    for l in 1:4
-        Ecov[1, l] *= -1 
-    end
-
-    return oddflag, Econ, Ecov
-end
-
-function make_camera_tetrad(X::Vector{Float64})
-
-    Gcov = gcov_func(X);
-    Gcon = gcon_func(Gcov);
-
-
-    trial::Vector{Float64} = zeros(Float64, NDIM)
-    trial[1] = -1.0
-
-    Ucam::Vector{Float64} = flip_index(trial, Gcon)
-    #println("Warning! Two different definitions of Ucam in make_camera_tetrad! One from ipole Ilinois repository and one from Monika's repository.")
-    Ucam[1] = 1.0
-    Ucam[2] = 0.0
-    Ucam[3] = 0.0
-    Ucam[4] = 0.0
-
-    trial = zeros(Float64, NDIM)
-    trial[1] = 1.0
-    trial[2] = 1.0
-
-    Kcon::Vector{Float64} = flip_index(trial, Gcon)
-    trial = zeros(Float64, NDIM)
-    trial[3] = 1.0
-    sing::Int, Econ, Ecov = make_plasma_tetrad(Ucam, Kcon, trial, Gcov)
-    return sing, Econ, Ecov;
-    
-end
-
-function null_normalize(Kcon::Vector{Float64}, fnorm::Float64)
-    Kcon_out = copy(Kcon)
-    inorm::Float64 = sqrt(sum(Kcon[2:4] .^ 2))
-    Kcon_out[1] = fnorm
-    for k in 2:4
-        Kcon_out[k] *= fnorm/inorm
-    end
-    return Kcon_out
-end
-
-function tetrad_to_coordinate(Econ::Array{Float64, 2}, Kcon_tetrad::Vector{Float64})
-    Kcon::Vector{Float64} = zeros(Float64, NDIM)
-    for l in 1:4
-        Kcon[l] = Econ[1, l] * Kcon_tetrad[1] + Econ[2, l] * Kcon_tetrad[2]+ Econ[3, l] * Kcon_tetrad[3] + Econ[4, l] * Kcon_tetrad[4]
-    end
-    return Kcon
-end
-
+export init_XK
 function init_XK(i::Int, j::Int, Xcam::Vector{Float64}, params, fovx::Float64, fovy::Float64)
+    """
+    Initializes a geodesic from the camera
+
+    Parameters:
+    @i: x-index of the pixel in the image plane.
+    @j: y-index of the pixel in the image plane.
+    @Xcam: Position vector of the camera in internal coordinates.
+    @params: Parameters for the camera.
+    @fovx: Field of view in the x-direction.
+    @fovy: Field of view in the y-direction.
+    """
 
     Econ = zeros(Float64, NDIM, NDIM)
     Ecov = zeros(Float64, NDIM, NDIM)
@@ -328,19 +23,19 @@ function init_XK(i::Int, j::Int, Xcam::Vector{Float64}, params, fovx::Float64, f
     _, Econ, Ecov = make_camera_tetrad(Xcam)
     if(i == 0 && j == 0)
         @warn("Warning! Two different definitions of Kcon in init_XK! One from ipole Ilinois repository and one from Monika's repository.")
+        @warn("Using Ipole's definition")
     end
-    #dxoff::Float64 = (i + 0.5 + params.xoff - 0.01) / params.nx - 0.5
-    #dyoff::Float64 = (j + 0.5 + params.yoff) / params.ny - 0.5
-
-    #Kcon_tetrad[1] = 0.0
-    #Kcon_tetrad[2] = (dxoff * cos(params.rotcam) - dyoff * sin(params.rotcam)) * fovx
-    #Kcon_tetrad[3] = (dxoff * sin(params.rotcam) + dyoff * cos(params.rotcam)) * fovy
-    #Kcon_tetrad[4] = 1.0
+    dxoff::Float64 = (i + 0.5 + params.xoff - 0.01) / params.nx - 0.5
+    dyoff::Float64 = (j + 0.5 + params.yoff) / params.ny - 0.5
 
     Kcon_tetrad[1] = 0.0
-    Kcon_tetrad[2] = (i/(params.nx) - 0.5) * fovx
-    Kcon_tetrad[3] = (j/(params.ny) - 0.5) * fovy
+    Kcon_tetrad[2] = (dxoff * cos(params.rotcam) - dyoff * sin(params.rotcam)) * fovx
+    Kcon_tetrad[3] = (dxoff * sin(params.rotcam) + dyoff * cos(params.rotcam)) * fovy
     Kcon_tetrad[4] = 1.0
+    # Kcon_tetrad[1] = 0.0
+    # Kcon_tetrad[2] = (i/(params.nx) - 0.5) * fovx
+    # Kcon_tetrad[3] = (j/(params.ny) - 0.5) * fovy
+    # Kcon_tetrad[4] = 1.0
 
     Kcon_tetrad = null_normalize(Kcon_tetrad, 1.0)  
 
@@ -352,6 +47,12 @@ function init_XK(i::Int, j::Int, Xcam::Vector{Float64}, params, fovx::Float64, f
 end
 
 function get_connection_analytic(X::Vector{Float64})
+    """
+    Returns the analytical connection coefficients in Kerr-Schild coordinates.
+
+    Parameters:
+    @X: Vector of position coordinates in internal coordinates.
+    """
     lconn = zeros(4, 4, 4)
     
     r1 = exp(X[2]) 
@@ -481,6 +182,16 @@ end
 
 
 function push_photon!(X::Vector{Float64}, Kcon::Vector{Float64}, dl::Float64, Xhalf::Vector{Float64}, Kconhalf::Vector{Float64})
+    """
+    Pushes the photon geodesic forward/backwards by a step size dl/-dl using the analytic connection coefficients.
+    Parameters:
+    @X: Position vector of the photon in internal coordinates.
+    @Kcon: Covariant 4-vector of the photon in internal coordinates.
+    @dl: Step size for the geodesic integration.
+    @Xhalf: Position vector of the photon at the half-step.
+    @Kconhalf: Covariant 4-vector of the photon at the half-step.
+    """
+
     lconn = zeros(Float64, NDIM, NDIM, NDIM)
 
     dKcon = zeros(Float64, NDIM)
@@ -532,8 +243,12 @@ function push_photon!(X::Vector{Float64}, Kcon::Vector{Float64}, dl::Float64, Xh
 end
 
 const DEL = 1.e-7
-
 function get_connection(X::Vector{Float64})
+    """
+    Returns the connection coefficients in Kerr-Schild coordinates using finite differences.
+    Parameters:
+    @X: Vector of position coordinates in internal coordinates.
+    """
     conn::Array{Float64,3} = zeros(Float64, NDIM, NDIM, NDIM)
     tmp = zeros(Float64, NDIM, NDIM, NDIM)
     Xh = copy(X)
@@ -589,32 +304,79 @@ end
 
 
 function stepsize(X::Vector{Float64}, Kcon::Vector{Float64}, eps::Float64)
-    dlx1::Float64 = eps / (abs(Kcon[2]) + SMALL*SMALL)
-    dlx2::Float64 = eps * min(X[3], 1. - X[3]) / (abs(Kcon[3]) + SMALL*SMALL)
-    dlx3::Float64 = eps / (abs(Kcon[4]) + SMALL*SMALL)
+    """
+    Computes the step size for the geodesic integration based on the position and covariant 4-vector.
+    Parameters:
+    @X: Position vector of the photon in internal coordinates.
+    @Kcon: Covariant 4-vector of the photon in internal coordinates.
+    @eps: Small constant for controlling the step size.
+    """
+    dlx2::Float64 = 0.0
+    dlx3::Float64 = 0.0
+    dlx4::Float64 = 0.0
+    idlx2::Float64 = 0.0
+    idlx3::Float64 = 0.0
+    idlx4::Float64 = 0.0
+    dl::Float64 = 0.0
 
-    idlx1::Float64 = 1.0 / (abs(dlx1) + SMALL*SMALL)
-    idlx2::Float64 = 1.0 / (abs(dlx2) + SMALL*SMALL)
-    idlx3::Float64 = 1.0 / (abs(dlx3) + SMALL*SMALL)
+    
+    if(true)
+        deh::Float64 = min(abs(X[2] - cstartx[2]), 0.1)
+        dlx2 = eps * (10 * deh) / (abs(Kcon[2]) + SMALL*SMALL)
+        cut::Float64 = 0.02
+        lx3::Float64 = cstopx[3] - cstartx[3]
+        dpole::Float64 = min(abs(X[3] / lx3), abs((cstopx[3] - X[3]) / lx3))
+        d2fac::Float64 = (dpole < cut) ? dpole / 3 : min(cut / 3 + (dpole - cut) * 10., 1)
+        dlx3 = eps * d2fac / (abs(Kcon[3]) + SMALL*SMALL)
 
-    dl::Float64 = 1.0 / (idlx1 + idlx2 + idlx3)
+        dlx4 = eps / (abs(Kcon[4]) + SMALL*SMALL)
+        idlx2 = 1.0 / (abs(dlx2) + SMALL*SMALL)
+        idlx3 = 1.0 / (abs(dlx3) + SMALL*SMALL)
+        idlx4 = 1.0 / (abs(dlx4) + SMALL*SMALL)
+
+        dl = 1.0 / (idlx2 + idlx3 + idlx4)
+    else
+        dlx2 = eps / (abs(Kcon[2]) + SMALL*SMALL)
+        dlx3 = eps * min(X[3], 1. - X[3]) / (abs(Kcon[3]) + SMALL*SMALL)
+        dlx4 = eps / (abs(Kcon[4]) + SMALL*SMALL)
+
+        idlx2 = 1.0 / (abs(dlx2) + SMALL*SMALL)
+        idlx3 = 1.0 / (abs(dlx3) + SMALL*SMALL)
+        idlx4 = 1.0 / (abs(dlx4) + SMALL*SMALL)
+
+        dl = 1.0 / (idlx2 + idlx3 + idlx4)
+    end
+
     return dl
 end
+
+
 function stop_backward_integration(X::Vector{Float64}, Kcon::Vector{Float64})
-    if (((X[2] > log(1.1 * Rstop)) && (Kcon[2] < 0.0)) || (X[2] < log(1.05 * Rh)))
+    """
+    Checks if the backward integration should stop based on the position and covariant 4-vector.
+    Parameters:
+    @X: Position vector of the photon in internal coordinates.
+    @Kcon: Covariant 4-vector of the photon in internal coordinates.
+    """
+    if (((X[2] > log(Rstop)) && (Kcon[2] < 0.0)) || (X[2] < log(Rh+ 0.0001)))
         return 1
     end
 
     return 0
 end
 
-function trace_geodesic(
-    Xi::Vector{Float64}, 
-    Kconi::Vector{Float64},   
-    traj::Vector{OfTraj},      
-    eps::Float64,              
-    step_max::Int,                       
-) :: Int
+function trace_geodesic(Xi::Vector{Float64}, Kconi::Vector{Float64}, traj::Vector{OfTraj}, eps::Float64, step_max::Int, i::Int, j::Int)
+    """
+    Function loops through the geodesic integration steps, pushing the photon along the geodesic.
+    Parameters:
+    @Xi: Initial position vector of the photon in internal coordinates.
+    @Kconi: Initial covariant 4-vector of the photon in internal coordinates.
+    @traj: Structure to store the trajectory of the photon.
+    @eps: Small constant for controlling the step size.
+    @step_max: Maximum number of steps for the geodesic integration.
+    @i: x-index of the pixel in the image plane (debugging purposes).
+    @j: y-index of the pixel in the image plane (debugging purposes).
+    """
     
     X = copy(Xi)
     Kcon = copy(Kconi)
@@ -630,14 +392,23 @@ function trace_geodesic(
     ))
     
     nstep = 1
+    # @printf("X goin in trace_geodesic: %.15e, %.15e, %.15e, %.15e\n", X[1], X[2], X[3], X[4])
+    # @printf("Kcon going in trace_geodesic: %.15e, %.15e, %.15e, %.15e\n", Kcon[1], Kcon[2], Kcon[3], Kcon[4])
     while (stop_backward_integration(X, Kcon) == 0) && (nstep < step_max)
         dl = stepsize(X, Kcon, eps)
+        # @printf("Step %d: dl = %.15e\n", nstep, dl)
 
         traj[nstep].dl = dl * L_unit * HPL / (ME * CL^2)
 
 
         push_photon!(X, Kcon, -dl, Xhalf, Kconhalf)
-  
+        # if(i == 0 && j == 1)
+        #     @printf("At step = %d\n", nstep)
+        #     @printf("Radius = %.15e\n", exp(X[2]))
+        #     @printf("X after push: %.15e, %.15e, %.15e, %.15e\n", X[1], X[2], X[3], X[4])
+        #     @printf("Kcon after push: %.15e, %.15e, %.15e, %.15e\n", Kcon[1], Kcon[2], Kcon[3], Kcon[4])
+        #     @printf("dl = %.15e, traj.dl = %.15e\n\n", dl, traj[nstep].dl)
+        # end
         nstep += 1
         push!(traj, OfTraj(
             copy(dl),
@@ -655,175 +426,3 @@ function trace_geodesic(
     return nstep
 end
 
-
-
-function get_pixel(i::Int, j::Int, Xcam::Vector{Float64}, params::Params, 
-                   fovx::Float64, fovy::Float64, freq::Float64)
-
-    X = zeros(Float64, NDIM)
-    Kcon = zeros(Float64, NDIM)
-
-    X, Kcon = init_XK(i, j, Xcam, params, fovx, fovy)
-    for mu in 1:NDIM
-        Kcon[mu] *= freq
-    end
-
-    traj = Vector{OfTraj}()
-    sizehint!(traj, params.maxnstep)  
-
-    nstep = trace_geodesic(X, Kcon, traj, params.eps, params.maxnstep, Xcam, params, false, i, j)
-    resize!(traj, length(traj)) 
-
-    # for i in 1:nstep
-    #     r, th = bl_coord(traj[i].X)
-    #     @printf("Step %d: R = %.15f, Theta = %.15f\n", i, r, th)
-    #     @printf("Kcon: [%.15e, %.15e, %.15e, %.15e]\n", traj[i].Kcon[1], traj[i].Kcon[2], traj[i].Kcon[3], traj[i].Kcon[4])
-    # end
-    if nstep >= params.maxnstep - 1
-        @error "Max number of steps exceeded at pixel ($i, $j)"
-    end
-
-    return traj, nstep, X, Kcon
-end
-
-function theta_func(th::Float64)
-    return th * π
-end
-function dtheta_func(th::Float64)
-    return π
-end
-
-function root_find(th::Float64)
-    x2a::Float64 = 0.0
-    x2b::Float64 = 0.0
-    X2a::Float64 = 0.0
-    X2b::Float64 = 0.0
-
-
-    if(th < π / 2.)
-        X2a = 0.0 - SMALL
-        X2b = 0.5 + SMALL
-    else
-        X2a = 0.5 - SMALL
-        X2b = 1.0 + SMALL
-    end
-
-    tha = theta_func(x2a)
-    thb = theta_func(x2b)
-
-    for i in 1:10
-        X2c = 0.5 * (X2a + X2b)
-        thc = theta_func(X2c)
-
-        if (thc - th) * (thb - th) < 0.0
-            X2a = X2c
-        else
-            X2b = X2c
-        end
-    end
-
-    tha = theta_func(X2a)
-    for i in 1:2
-        dthdX2 = dtheta_func(X2a)
-        X2a -= (tha - th) / dthdX2
-        tha = theta_func(X2a)
-    end
-
-    return X2a
-end
-
-
-
-
-
-function camera_position(cam_dist::Float64, cam_theta_angle::Float64, cam_phi_angle::Float64)
-    
-    X = zeros(Float64, NDIM)
-    X[1] = 0.0
-    X[2] = log(cam_dist)
-    X[3] = root_find(cam_theta_angle / 180. * π)
-    X[4] = cam_phi_angle/180 * π
-
-    return X
-end
-
-
-function main()
-    println("MBH = $MBH, L_unit = $L_unit")
-    nx, ny = 128, 128 
-    freq = 230e9 * HPL/(ME * CL * CL) 
-    cam_dist, cam_theta_angle, cam_phi_angle = 240.0, 90., 0.
-
-    Xcam = camera_position(cam_dist, cam_theta_angle, cam_phi_angle)
-    p = Params(false, 0.0, 0.0, nx, ny, 0.0, 0.03, 5000, 1.69e+07 * PC)
-    DX = 40.0
-    DY = 40.0
-    fovx = DX/cam_dist
-    fovy = DY/cam_dist
-    println("Camera position: Xcam = [$(Xcam[1]), $(Xcam[2]), $(Xcam[3]), $(Xcam[4])]")
-    println("fovx = $fovx, fovy = $fovy")
-    println("DX = $DX, DY = $DY")
-    trajectories = Array{Vector{NTuple{2, Float64}}, 2}(undef, nx, ny)  
-
-    for i in 0:(nx - 1)
-        println("Processing pixel row ($i)")
-        for j in 0:(ny - 1)
-            traj, nstep, _, _ = get_pixel(i, j, Xcam, p, fovx, fovy, freq)
-
-            if !isempty(traj)
-            sph_coords = [bl_coord(pt.X) for pt in traj if length(pt.X) >= 4]
-                trajectories[i+1, j+1] = sph_coords
-            else
-                trajectories[i+1, j+1] = []
-            end
-        end
-    end
-
-    colors = distinguishable_colors(nx * ny)
-    color_index = 1
-    plt = plot(xlim=(-50, 50), ylim=(-20, 260), legend=false, xlabel="x", ylabel="y")
-    
-    for j in 1:40:ny
-        println("Plotting row ($j)")
-        for i in 1:40:nx
-            sph_traj = trajectories[i, j]
-            if !isempty(sph_traj)
-                xs, ys = Float64[], Float64[], Float64[]
-                for sph in sph_traj
-                    r = sph[1]
-                    th = sph[2]
-                    x = r * cos(th)
-                    y = r * sin(th)
-                    push!(xs, x)
-                    push!(ys, y)
-                end
-
-                label_str = "px($i,$j)"
-                plot!(plt, xs, ys, lw=1.0, color=colors[color_index], label=label_str)
-                color_index += 1
-            end
-        end
-    end
-
-    savefig(plt, "./imgs/geodesics/geodesics.png")
-    println("Saved geodesic plot to ./imgs/geodesics/geodesics.png")
-end
-
-const NDIM = 4  
-const a = 0.9375
-const SMALL = 1e-40
-const Rout = 40.0
-const Rh = 1 + sqrt(1. - a * a);
-const R0 = 0
-const Rstop = 40.0
-const HPL = 6.6260693e-27 
-const ME = 9.1093826e-28 
-const GNEWT = 6.6742e-8 
-const CL = 2.99792458e10 
-const MSUN = 1.989e33 
-const MUAS_PER_RAD = 2.06265e11
-const MBH = 4.5e6 * MSUN
-const L_unit = GNEWT * MBH / (CL * CL);
-const PC = 3.085678e18 
-main()
-GC.gc()

@@ -1,29 +1,16 @@
-
-# AutoDiff + ODEsolver project
-
+# Jipole
 ## Overview
-This project is currently underdevelopment and aims to couple Autodifferenciation with differential equations solvers.
 
-## Files
+Jipole is a Julia-based code under development that performs radiative transfer in curved spacetimes. It's intended to use automatic differentiation (autodiff) to compute derivatives of input parameters.
 
-### `./src/CG_analysis.jl`
-This file contains the code for the conjugate gradient method to solve the rabbits and foxes model using automatic differentiation.
-
-### `./src/MCMC_analysis.jl`
-This file is responsible for the MCMC analysis of the rabbits and foxes model using a hand made metropolis hastings algorithm. 
-
-
-### `./src/AD_ODE_RK2.jl`
-This file solves the system of ODEs using the DifferentialEquations package.
-
-### `./old/AD_ODE2.jl`
-This file solves the system of ODEs using a explicit Euler method made by myself.
-
+## Current State
+The current version of Jipole focuses on implementing and validating test problems described in Section 3.2 of the [Gold et al. 2020](https://iopscience.iop.org/article/10.3847/1538-4357/ab96c6) by porting the C-based code [ipole](https://github.com/moscibrodzka/ipole) to Julia.
 
 ## Running the Project
-To run any of the scripts, open a terminal and navigate to the project directory. Use the `julia --project="." ` command to load the packages in this repository, followed by the script name. For example:
-```
-include("./src/MCMC_analysis.jl")
-```
+To run the code, open a terminal and navigate to the root project directory. Use the following command to start Julia with project-specific dependencies and set the number of threads:
 
-This should run the solving/MCMC algorithms and generate the respective img files inside the folder already
+`julia --project="."`
+
+Then, in the Julia REPL, run:
+`include("./src/main.jl")`
+This will execute the main driver script.
