@@ -1,6 +1,6 @@
 export get_analytic_jk
 
-function get_fluid_nu(Kcon::Vector{Float64}, Ucov::Vector{Float64})
+function get_fluid_nu(Kcon::MVec4, Ucov::MVec4)
     """
     Computes the fluid frequency from the covariant 4-vector and the 4-velocity.
     Parameters:
@@ -36,7 +36,7 @@ function get_analytic_jk(X, Kcon, freqcgs::Float64)
 
 end
 
-function radiating_region(X::Vector{Float64})
+function radiating_region(X::MVec4)
     """
     Checks if the position is within the radiating region.
     Parameters:

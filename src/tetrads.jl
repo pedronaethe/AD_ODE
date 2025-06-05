@@ -4,7 +4,7 @@ export make_camera_tetrad
 
 
 
-function make_camera_tetrad(X::Vector{Float64})
+function make_camera_tetrad(X::MVec4)
     """
     Returns a camera tetrad based on the input position vector X.
 
@@ -25,22 +25,22 @@ function make_camera_tetrad(X::Vector{Float64})
     Gcon = gcon_func(Gcov);
 
 
-    trial::Vector{Float64} = zeros(Float64, NDIM)
+    trial= zero(MVec4)
     trial[1] = -1.0
 
-    Ucam::Vector{Float64} = flip_index(trial, Gcon)
+    Ucam::MVec4 = flip_index(trial, Gcon)
     #@warn("Warning! Two different definitions of Ucam in make_camera_tetrad! One from ipole Ilinois repository and one from Monika's repository.")
     # Ucam[1] = 1.0
     # Ucam[2] = 0.0
     # Ucam[3] = 0.0
     # Ucam[4] = 0.0
 
-    trial = zeros(Float64, NDIM)
+    trial = zero(MVec4)
     trial[1] = 1.0
     trial[2] = 1.0
 
-    Kcon::Vector{Float64} = flip_index(trial, Gcon)
-    trial = zeros(Float64, NDIM)
+    Kcon::MVec4 = flip_index(trial, Gcon)
+    trial = zero(MVec4)
     trial[3] = 1.0
     sing::Int, Econ, Ecov = make_plasma_tetrad(Ucam, Kcon, trial, Gcov)
     return sing, Econ, Ecov;
@@ -48,7 +48,7 @@ function make_camera_tetrad(X::Vector{Float64})
 end
 
 
-function make_plasma_tetrad(Ucon::Vector{Float64}, Kcon::Vector{Float64}, Bcon::Vector{Float64}, Gcov::Array{Float64, 2})
+function make_plasma_tetrad(Ucon::MVec4, Kcon::MVec4, Bcon::MVec4, Gcov::MMat4)
     """
     Returns a plasma tetrad based on the input vectors Ucon, Kcon, and Bcon.
 
@@ -69,9 +69,9 @@ function make_plasma_tetrad(Ucon::Vector{Float64}, Kcon::Vector{Float64}, Bcon::
     e^2 along b
     e^3 along spatial part of K
     """
-    Econ::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
-    Ecov::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
-    ones_vector::Vector{Float64} = ones(Float64, NDIM)
+    Econ = MMat4(undef)
+    Ecov = MMat4(undef)
+    ones_vector = ones(MVec4)
     Econ[1,:] = set_Econ_from_trial(1, Ucon);
     Econ[2,:] = set_Econ_from_trial(4, ones_vector);
     Econ[3,:] = set_Econ_from_trial(3, Bcon);
@@ -122,7 +122,7 @@ function make_plasma_tetrad(Ucon::Vector{Float64}, Kcon::Vector{Float64}, Bcon::
 end
 
 
-function null_normalize(Kcon::Vector{Float64}, fnorm::Float64)
+function null_normalize(Kcon::MVec4, fnorm::Float64)
     """
     Normalizes null vector in a tetrad frame.
 
@@ -139,7 +139,7 @@ function null_normalize(Kcon::Vector{Float64}, fnorm::Float64)
     return Kcon_out
 end
 
-function tetrad_to_coordinate(Econ::Array{Float64, 2}, Kcon_tetrad::Vector{Float64})
+function tetrad_to_coordinate(Econ::MMat4, Kcon_tetrad::MVec4)
     """
     Returns the covariant 4-vector in the coordinate frame from the tetrad frame.
 
@@ -149,7 +149,7 @@ function tetrad_to_coordinate(Econ::Array{Float64, 2}, Kcon_tetrad::Vector{Float
     """
 
 
-    Kcon::Vector{Float64} = zeros(Float64, NDIM)
+    Kcon::MVec4 = MVec4(undef)
     for l in 1:4
         Kcon[l] = Econ[1, l] * Kcon_tetrad[1] + Econ[2, l] * Kcon_tetrad[2]+ Econ[3, l] * Kcon_tetrad[3] + Econ[4, l] * Kcon_tetrad[4]
     end

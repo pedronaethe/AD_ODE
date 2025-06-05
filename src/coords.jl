@@ -2,7 +2,7 @@
 export theta_func
 
 
-function theta_func(X::Vector{Float64})
+function theta_func(X::MVec4)
     """
     Computes the theta coordinate from the internal coordinates.
     Parameters:
@@ -15,16 +15,16 @@ end
 
 
 
-function bl_to_ks(X::Vector{Float64}, ucon_bl::Vector{Float64})
+function bl_to_ks(X::MVec4, ucon_bl::MVec4)
     """
     Converts the 4-velocity from Boyer-Lindquist coordinates to Kerr-Schild coordinates.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     @ucon_bl: Covariant 4-velocity in Boyer-Lindquist coordinates.
     """
-    ucon_ks = zeros(Float64, NDIM)
+    ucon_ks = zero(MVec4)
     r, th = bl_coord(X)
-    trans = zeros(Float64, NDIM, NDIM)
+    trans = MMat4(undef)
     for μ in 1:NDIM
         for ν in 1:NDIM
             trans[μ, ν] = if μ == ν 1.0 else 0.0 end
@@ -43,13 +43,13 @@ function bl_to_ks(X::Vector{Float64}, ucon_bl::Vector{Float64})
 end
 
 
-function set_dxdX(X::Vector{Float64})
+function set_dxdX(X::MVec4)
     """
     Computes the Jacobian matrix dxdX for the transformation from Kerr-Schild coordinates to internal coordinates.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    dxdX = zeros(Float64, NDIM, NDIM)
+    dxdX = MMat4(undef)
     hslope = 0.0   
     for mu in 1:NDIM
         for nu in 1:NDIM
@@ -72,13 +72,13 @@ function set_dxdX(X::Vector{Float64})
     return dxdX
 end
 
-function set_dXdx(X::Vector{Float64})
+function set_dXdx(X::MVec4)
     """
     Computes the inverse Jacobian matrix dXdx for the transformation from internal coordinates to Kerr-Schild coordinates.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    dxdX = zeros(Float64, NDIM, NDIM)
+    dxdX = MMat4(undef)
     dxdX = set_dxdX(X)
     #invert matrix to find dXdx from dxdX using linear algebra package
     dXdx = inv(dxdX)
@@ -87,15 +87,15 @@ function set_dXdx(X::Vector{Float64})
 end
 
 
-function vec_from_ks(X::Vector{Float64}, v_ks::Vector{Float64})
+function vec_from_ks(X::MVec4, v_ks::MVec4)
     """
     Converts a 4-vector from Kerr-Schild coordinates to the natural coordinate system.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     @v_ks: 4-vector in Kerr-Schild coordinates.
     """
-    v_nat = zeros(Float64, NDIM)
-    dXdx = zeros(Float64, NDIM, NDIM)
+    v_nat = zero(MVec4)
+    dXdx = MMat4(undef)
     dXdx = set_dXdx(X)
 
     for μ in 1:NDIM
@@ -108,7 +108,7 @@ function vec_from_ks(X::Vector{Float64}, v_ks::Vector{Float64})
 end
 
 
-function bl_coord(X::Vector{Float64})
+function bl_coord(X::MVec4)
     """
     Returns Boyer-Lindquist coordinates (r, th) from internal coordinates (X[2], X[3]).
     Parameters:
@@ -119,7 +119,7 @@ function bl_coord(X::Vector{Float64})
     return r, th
 end
 
-function flip_index(vector::Vector{Float64}, metric::Array{Float64,2})
+function flip_index(vector::MVec4, metric::MMat4)
     """
     Returns the flipped index of a vector using the metric tensor.
     
@@ -127,7 +127,7 @@ function flip_index(vector::Vector{Float64}, metric::Array{Float64,2})
     @vector: Vector to be flipped.
     @metric: Metric tensor used for flipping.
     """
-    flipped_vector = zeros(Float64, NDIM)
+    flipped_vector = zero(MVec4)
     for ν in 1:NDIM
         for μ in 1:NDIM
             flipped_vector[ν] += metric[ν, μ] * vector[μ]

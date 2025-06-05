@@ -1,6 +1,6 @@
 
 export init_XK
-function init_XK(i::Int, j::Int, Xcam::Vector{Float64}, params, fovx::Float64, fovy::Float64)
+function init_XK(i::Int, j::Int, Xcam::MVec4, params, fovx::Float64, fovy::Float64)
     """
     Initializes a geodesic from the camera
 
@@ -13,11 +13,11 @@ function init_XK(i::Int, j::Int, Xcam::Vector{Float64}, params, fovx::Float64, f
     @fovy: Field of view in the y-direction.
     """
 
-    Econ = zeros(Float64, NDIM, NDIM)
-    Ecov = zeros(Float64, NDIM, NDIM)
-    Kcon = zeros(Float64, NDIM)
-    Kcon_tetrad = zeros(Float64, NDIM)
-    X = zeros(Float64, NDIM)
+    Econ = MMat4(undef)
+    Ecov = MMat4(undef)
+    Kcon = MVec4(undef)
+    Kcon_tetrad = MVec4(undef)
+    X = MVec4(undef)
 
 
     _, Econ, Ecov = make_camera_tetrad(Xcam)
@@ -46,7 +46,7 @@ function init_XK(i::Int, j::Int, Xcam::Vector{Float64}, params, fovx::Float64, f
     return X, Kcon
 end
 
-function get_connection_analytic(X::Vector{Float64})
+function get_connection_analytic(X::MVec4)
     """
     Returns the analytical connection coefficients in Kerr-Schild coordinates.
 
@@ -181,7 +181,7 @@ end
 
 
 
-function push_photon!(X::Vector{Float64}, Kcon::Vector{Float64}, dl::Float64, Xhalf::Vector{Float64}, Kconhalf::Vector{Float64})
+function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf::MVec4)
     """
     Pushes the photon geodesic forward/backwards by a step size dl/-dl using the analytic connection coefficients.
     Parameters:
@@ -192,11 +192,11 @@ function push_photon!(X::Vector{Float64}, Kcon::Vector{Float64}, dl::Float64, Xh
     @Kconhalf: Covariant 4-vector of the photon at the half-step.
     """
 
-    lconn = zeros(Float64, NDIM, NDIM, NDIM)
+    lconn = Tensor3D(undef)
 
-    dKcon = zeros(Float64, NDIM)
-    Xh = zeros(Float64, NDIM)
-    Kconh = zeros(Float64, NDIM)
+    dKcon = MVec4(undef)
+    Xh = MVec4(undef)
+    Kconh = MVec4(undef)
 
     lconn = get_connection_analytic(X)
 
@@ -243,20 +243,20 @@ function push_photon!(X::Vector{Float64}, Kcon::Vector{Float64}, dl::Float64, Xh
 end
 
 const DEL = 1.e-7
-function get_connection(X::Vector{Float64})
+function get_connection(X::MVec4)
     """
     Returns the connection coefficients in Kerr-Schild coordinates using finite differences.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     """
-    conn::Array{Float64,3} = zeros(Float64, NDIM, NDIM, NDIM)
-    tmp = zeros(Float64, NDIM, NDIM, NDIM)
+    conn = Tensor3D(undef)
+    tmp = Tensor3D(undef)
     Xh = copy(X)
     Xl = copy(X)
-    gcon = zeros(Float64, NDIM, NDIM)
-    gcov = zeros(Float64, NDIM, NDIM)
-    gh = zeros(Float64, NDIM, NDIM)
-    gl = zeros(Float64, NDIM, NDIM)
+    gcon = MMat4(undef)
+    gcov = MMat4(undef)
+    gh = MMat4(undef)
+    gl = MMat4(undef)
 
     gcov = gcov_func(X)
     gcon = gcon_func(gcov)
@@ -303,7 +303,7 @@ function get_connection(X::Vector{Float64})
 end
 
 
-function stepsize(X::Vector{Float64}, Kcon::Vector{Float64}, eps::Float64)
+function stepsize(X::MVec4, Kcon::MVec4, eps::Float64)
     """
     Computes the step size for the geodesic integration based on the position and covariant 4-vector.
     Parameters:
@@ -351,7 +351,7 @@ function stepsize(X::Vector{Float64}, Kcon::Vector{Float64}, eps::Float64)
 end
 
 
-function stop_backward_integration(X::Vector{Float64}, Kcon::Vector{Float64})
+function stop_backward_integration(X::MVec4, Kcon::MVec4)
     """
     Checks if the backward integration should stop based on the position and covariant 4-vector.
     Parameters:
@@ -365,7 +365,7 @@ function stop_backward_integration(X::Vector{Float64}, Kcon::Vector{Float64})
     return 0
 end
 
-function trace_geodesic(Xi::Vector{Float64}, Kconi::Vector{Float64}, traj::Vector{OfTraj}, eps::Float64, step_max::Int, i::Int, j::Int)
+function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, eps::Float64, step_max::Int, i::Int, j::Int)
     """
     Function loops through the geodesic integration steps, pushing the photon along the geodesic.
     Parameters:

@@ -1,7 +1,7 @@
 using LinearAlgebra
 export gdet_func, gcov_func, gcon_func, gcov_bl
 
-function gdet_func(gcov::Matrix{Float64})
+function gdet_func(gcov::MMat4)
     """
     Returns the determinant of the covariant metric tensor.
 
@@ -20,7 +20,7 @@ function gdet_func(gcov::Matrix{Float64})
     return sqrt(abs(gdet))
 end
 
-function gcov_func(X::Vector{Float64})
+function gcov_func(X::MVec4)
     """
     Returns covariant metric tensor in Kerr-Schild coordinates.
 
@@ -30,7 +30,7 @@ function gcov_func(X::Vector{Float64})
     r::Float64 = 0;
     th::Float64 = 0;
     r, th = bl_coord(X)
-    gcov::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
+    gcov = zeros(MMat4)
     cth = cos(th)
     sth = abs(sin(th))
     if(sth < 1e-40)
@@ -64,7 +64,7 @@ end
 
 
 
-function gcon_func(gcov::Array{Float64, 2})
+function gcon_func(gcov::MMat4)
     """
     Returns contravariant metric tensor in Kerr-Schild coordinates through matrix inversion of the covariant tensor.
     Parameters:
@@ -87,7 +87,7 @@ function gcov_bl(r,th)
     @r: Radial coordinate in Boyer-Lindquist coordinates.
     @th: Angular coordinate in Boyer-Lindquist coordinates.
     """
-    gcov::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
+    gcov = zeros(MMat4)
     sth = sin(th)
     cth = cos(th)
     s2 = sth * sth

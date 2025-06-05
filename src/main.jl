@@ -1,6 +1,17 @@
 using Printf
 using Base.Threads
 using LinearAlgebra
+using StaticArrays
+
+#Muttable 4-dimensional vector allocated on the stack
+const MVec4  = MVector{4,Float64}
+#Immutable 4-dimensional vector array allocated on the stack
+const Mat4  = SMatrix{4,4,Float64} 
+#Mutable 4x4 matrix allocated on the stack
+const MMat4 = MMatrix{4,4,Float64}
+#Mutable 3-dimensional vector allocated on the stack
+const Tensor3D = MArray{Tuple{4,4,4}, Float64, 3, 64}  # 4×4×4 mutable tensor
+
 
 mutable struct Params
     xoff::Float64
@@ -14,10 +25,10 @@ end
 
 mutable struct OfTraj
     dl::Float64
-    X::Vector{Float64}
-    Kcon::Vector{Float64}
-    Xhalf::Vector{Float64}
-    Kconhalf::Vector{Float64}
+    X::MVec4
+    Kcon::MVec4
+    Xhalf::MVec4
+    Kconhalf::MVec4
 end
 
 include("camera.jl")
@@ -32,7 +43,7 @@ include("geodesics.jl")
 include("constants.jl")
 
 
-function get_pixel(i::Int, j::Int, Xcam::Vector{Float64}, params::Params, fovx::Float64, fovy::Float64, freq::Float64)
+function get_pixel(i::Int, j::Int, Xcam::MVec4, params::Params, fovx::Float64, fovy::Float64, freq::Float64)
     """
     Evolves the geodesic and integrate emissivity along the geodesic for each pixel.
     Parameters:
@@ -44,8 +55,8 @@ function get_pixel(i::Int, j::Int, Xcam::Vector{Float64}, params::Params, fovx::
     @fovy: Field of view in the y-direction.
     @freq: Frequency of the radiation.
     """
-    X = zeros(Float64, NDIM)
-    Kcon = zeros(Float64, NDIM)
+    X = MVec4(undef)
+    Kcon = MVec4(undef)
 
     X, Kcon = init_XK(i, j, Xcam, params, fovx, fovy)
 
@@ -116,10 +127,10 @@ function main()
                 #             traj[step].Kcon[3], traj[step].Kcon[4])
                 #     end
                 # end
-                Xi = zeros(Float64, NDIM)
-                Kconi = zeros(Float64, NDIM)
-                Xf = zeros(Float64, NDIM)
-                Kconf = zeros(Float64, NDIM)
+                Xi = MVec4(undef)
+                Kconi = MVec4(undef)
+                Xf = MVec4(undef)
+                Kconf = MVec4(undef)
 
                 for k in 1:NDIM
                     Xi[k] = traj[nstep].X[k]

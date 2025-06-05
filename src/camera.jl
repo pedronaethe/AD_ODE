@@ -2,7 +2,7 @@ export camera_position
 
 include("../src/metrics.jl")
 
-function root_find(x::Vector{Float64})
+function root_find(x::MVec4)
     """
     Finds the root of the theta function using a bisection method.
     Parameters:
@@ -10,9 +10,9 @@ function root_find(x::Vector{Float64})
     """
     th = x[3]
 
-    xa = zeros(Float64, NDIM)
-    xb = zeros(Float64, NDIM)
-    xc = zeros(Float64, NDIM)
+    xa = zero(MVec4)
+    xb = zero(MVec4)
+    xc = zero(MVec4)
 
     xa[2] = log(x[2])
     xa[4] = x[4]
@@ -67,8 +67,8 @@ function camera_position(cam_dist::Float64, cam_theta_angle::Float64, cam_phi_an
     @cam_phi_angle: Azimuthal angle of the camera in degrees.
     """
     
-    X = zeros(Float64, NDIM)
-    x = [0.0, cam_dist, cam_theta_angle/180 * π, cam_phi_angle/180 * π]
+    X = zero(MVec4)
+    x = MVec4(0.0, cam_dist, cam_theta_angle/180 * π, cam_phi_angle/180 * π)
     X[1] = 0.0
     X[2] = log(cam_dist)
     X[3] = root_find(x)

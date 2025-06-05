@@ -3,7 +3,6 @@ using Plots
 using Printf
 
 
-const use_eKS_internal = 1
 mutable struct Params
     old_centering::Bool
     xoff::Float64
@@ -18,35 +17,35 @@ end
 
 mutable struct OfTraj
     dl::Float64
-    X::Vector{Float64}
-    Kcon::Vector{Float64}
-    Xhalf::Vector{Float64}
-    Kconhalf::Vector{Float64}
+    X::MVec4
+    Kcon::MVec4
+    Xhalf::MVec4
+    Kconhalf::MVec4
 end
 
 
-function print_vector(name::String, vec::Vector{Float64})
+function print_vector(name::String, vec::MVec4)
     println("Vector: $name")
-    for i in 1:length(vec)
+    for i in eachindex(vec)
         print("$(vec[i]) ")
     end
     println()
 end
-function print_matrix(name::String, mat::Array{Float64, 2})
+function print_matrix(name::String, mat::MMat4)
     println("Matrix: $name")
-    for i in 1:size(mat, 1)
-        for j in 1:size(mat, 2)
+    for i in axes(mat, 1)
+        for j in axes(mat, 2)
             @printf("%.15e ", mat[i, j])
         end
         println()
     end
 end
 
-function gcov_func(X::Vector{Float64})
+function gcov_func(X::MVec4)
     r::Float64 = 0;
     th::Float64 = 0;
     r, th = bl_coord(X)
-    gcov::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
+    gcov = zero(MMat4)
     cth = cos(th)
     sth = abs(sin(th))
     if(sth < 1e-40)
@@ -88,7 +87,7 @@ function gcovKS(r::Float64, th::Float64)
     s2::Float64 = sth * sth
     rho2::Float64 = r * r + a * a * cth * cth
 
-    gcov::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
+    gcov::Array{Float64, 2} = zero(MMat4)
 
     gcov[1, 1] = -1. + 2. * r / rho2
     gcov[1, 2] = 2. * r / rho2
@@ -114,14 +113,14 @@ function gconKS(gcov::Array{Float64, 2})
     return gcon
 end
 
-function bl_coord(X::Vector{Float64})
+function bl_coord(X::MVec4)
     R0 = 0.0;
     r = exp(X[2]) + R0;
     th = π *X[3]
     return r, th
 end
 
-function flip_index(vector::Vector{Float64}, metric::Array{Float64,2})
+function flip_index(vector::MVec4, metric::Array{Float64,2})
     flipped_vector = zeros(Float64, NDIM)
     for ν in 1:NDIM
         for μ in 1:NDIM
@@ -131,8 +130,8 @@ function flip_index(vector::Vector{Float64}, metric::Array{Float64,2})
     return flipped_vector
 end
 
-function set_Econ_from_trial(defdir::Int, trial::Vector{Float64})
-    Econ::Vector{Float64} = zeros(Float64, 4)
+function set_Econ_from_trial(defdir::Int, trial::MVec4)
+    Econ = MVec4(undef)
     norm = sum(abs.(trial[2:4])) 
     for k in 1:4
         if norm <= SMALL
@@ -144,7 +143,7 @@ function set_Econ_from_trial(defdir::Int, trial::Vector{Float64})
     return Econ
 end
 
-function normalize(vcon::Vector{Float64}, Gcov::Array{Float64,2})
+function normalize(vcon::MVec4, Gcov::Array{Float64,2})
 
     vcon_out = copy(vcon)
 
@@ -162,7 +161,7 @@ function normalize(vcon::Vector{Float64}, Gcov::Array{Float64,2})
     return vcon_out
 end
 
-function project_out(vcona::Vector{Float64}, vconb::Vector{Float64}, Gcov::Array{Float64,2})
+function project_out(vcona::MVec4, vconb::MVec4, Gcov::Array{Float64,2})
     vconb_sq = 0.0
     for k in 1:4
         for l in 1:4
@@ -216,11 +215,11 @@ function check_handedness(Econ::Array{Float64,2}, Gcov::Array{Float64,2})
     return (0, dot_var)
 end
 
-function make_plasma_tetrad(Ucon::Vector{Float64}, Kcon::Vector{Float64}, Bcon::Vector{Float64}, Gcov::Array{Float64, 2})
+function make_plasma_tetrad(Ucon::MVec4, Kcon::MVec4, Bcon::MVec4, Gcov::Array{Float64, 2})
 
-    Econ::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
-    Ecov::Array{Float64, 2} = zeros(Float64, NDIM, NDIM)
-    ones_vector::Vector{Float64} = ones(Float64, NDIM)
+    Econ = MMat4(undef)
+    Ecov = MMat4(undef)
+    ones_vector = ones(MVec4)
     Econ[1,:] = set_Econ_from_trial(1, Ucon);
     Econ[2,:] = set_Econ_from_trial(4, ones_vector);
     Econ[3,:] = set_Econ_from_trial(3, Bcon);
@@ -270,35 +269,35 @@ function make_plasma_tetrad(Ucon::Vector{Float64}, Kcon::Vector{Float64}, Bcon::
     return oddflag, Econ, Ecov
 end
 
-function make_camera_tetrad(X::Vector{Float64})
+function make_camera_tetrad(X::MVec4)
 
     Gcov = gcov_func(X);
     Gcon = gcon_func(Gcov);
 
 
-    trial::Vector{Float64} = zeros(Float64, NDIM)
+    trial = zero(MVec4)
     trial[1] = -1.0
 
-    Ucam::Vector{Float64} = flip_index(trial, Gcon)
+    Ucam::MVec4 = flip_index(trial, Gcon)
     #println("Warning! Two different definitions of Ucam in make_camera_tetrad! One from ipole Ilinois repository and one from Monika's repository.")
     Ucam[1] = 1.0
     Ucam[2] = 0.0
     Ucam[3] = 0.0
     Ucam[4] = 0.0
 
-    trial = zeros(Float64, NDIM)
+    trial = zero(MVec4)
     trial[1] = 1.0
     trial[2] = 1.0
 
-    Kcon::Vector{Float64} = flip_index(trial, Gcon)
-    trial = zeros(Float64, NDIM)
+    Kcon::MVec4 = flip_index(trial, Gcon)
+    trial = zero(MVec4)
     trial[3] = 1.0
     sing::Int, Econ, Ecov = make_plasma_tetrad(Ucam, Kcon, trial, Gcov)
     return sing, Econ, Ecov;
     
 end
 
-function null_normalize(Kcon::Vector{Float64}, fnorm::Float64)
+function null_normalize(Kcon::MVec4, fnorm::Float64)
     Kcon_out = copy(Kcon)
     inorm::Float64 = sqrt(sum(Kcon[2:4] .^ 2))
     Kcon_out[1] = fnorm
@@ -308,21 +307,21 @@ function null_normalize(Kcon::Vector{Float64}, fnorm::Float64)
     return Kcon_out
 end
 
-function tetrad_to_coordinate(Econ::Array{Float64, 2}, Kcon_tetrad::Vector{Float64})
-    Kcon::Vector{Float64} = zeros(Float64, NDIM)
+function tetrad_to_coordinate(Econ::Array{Float64, 2}, Kcon_tetrad::MVec4)
+    Kcon = MVec4(undef)
     for l in 1:4
         Kcon[l] = Econ[1, l] * Kcon_tetrad[1] + Econ[2, l] * Kcon_tetrad[2]+ Econ[3, l] * Kcon_tetrad[3] + Econ[4, l] * Kcon_tetrad[4]
     end
     return Kcon
 end
 
-function init_XK(i::Int, j::Int, Xcam::Vector{Float64}, params, fovx::Float64, fovy::Float64)
+function init_XK(i::Int, j::Int, Xcam::MVec4, params, fovx::Float64, fovy::Float64)
 
-    Econ = zeros(Float64, NDIM, NDIM)
-    Ecov = zeros(Float64, NDIM, NDIM)
-    Kcon = zeros(Float64, NDIM)
-    Kcon_tetrad = zeros(Float64, NDIM)
-    X = zeros(Float64, NDIM)
+    Econ = MMat4(undef)
+    Ecov = MMat4(undef)
+    Kcon = MMVec4(undef)
+    Kcon_tetrad =  MMVec4(undef)
+    X = MMVec4(undef)
 
 
     _, Econ, Ecov = make_camera_tetrad(Xcam)
@@ -351,7 +350,7 @@ function init_XK(i::Int, j::Int, Xcam::Vector{Float64}, params, fovx::Float64, f
     return X, Kcon
 end
 
-function get_connection_analytic(X::Vector{Float64})
+function get_connection_analytic(X::MVec4)
     lconn = zeros(4, 4, 4)
     
     r1 = exp(X[2]) 
@@ -480,7 +479,7 @@ end
 
 
 
-function push_photon!(X::Vector{Float64}, Kcon::Vector{Float64}, dl::Float64, Xhalf::Vector{Float64}, Kconhalf::Vector{Float64})
+function push_photon!(X::MVec4, Kcon::MVec4, dl::Float64, Xhalf::MVec4, Kconhalf::MVec4)
     lconn = zeros(Float64, NDIM, NDIM, NDIM)
 
     dKcon = zeros(Float64, NDIM)
@@ -533,15 +532,15 @@ end
 
 const DEL = 1.e-7
 
-function get_connection(X::Vector{Float64})
+function get_connection(X::MVec4)
     conn::Array{Float64,3} = zeros(Float64, NDIM, NDIM, NDIM)
     tmp = zeros(Float64, NDIM, NDIM, NDIM)
     Xh = copy(X)
     Xl = copy(X)
-    gcon = zeros(Float64, NDIM, NDIM)
-    gcov = zeros(Float64, NDIM, NDIM)
-    gh = zeros(Float64, NDIM, NDIM)
-    gl = zeros(Float64, NDIM, NDIM)
+    gcon = MMat4(undef)
+    gcov = MMat4(undef)
+    gh = MMat4(undef)
+    gl = MMat4(undef)
 
     gcov = gcov_func(X)
     gcon = gcon_func(gcov)
@@ -588,7 +587,7 @@ function get_connection(X::Vector{Float64})
 end
 
 
-function stepsize(X::Vector{Float64}, Kcon::Vector{Float64}, eps::Float64)
+function stepsize(X::MVec4, Kcon::MVec4, eps::Float64)
     dlx1::Float64 = eps / (abs(Kcon[2]) + SMALL*SMALL)
     dlx2::Float64 = eps * min(X[3], 1. - X[3]) / (abs(Kcon[3]) + SMALL*SMALL)
     dlx3::Float64 = eps / (abs(Kcon[4]) + SMALL*SMALL)
@@ -600,7 +599,7 @@ function stepsize(X::Vector{Float64}, Kcon::Vector{Float64}, eps::Float64)
     dl::Float64 = 1.0 / (idlx1 + idlx2 + idlx3)
     return dl
 end
-function stop_backward_integration(X::Vector{Float64}, Kcon::Vector{Float64})
+function stop_backward_integration(X::MVec4, Kcon::MVec4)
     if (((X[2] > log(1.1 * Rstop)) && (Kcon[2] < 0.0)) || (X[2] < log(1.05 * Rh)))
         return 1
     end
@@ -609,8 +608,8 @@ function stop_backward_integration(X::Vector{Float64}, Kcon::Vector{Float64})
 end
 
 function trace_geodesic(
-    Xi::Vector{Float64}, 
-    Kconi::Vector{Float64},   
+    Xi::MVec4, 
+    Kconi::MVec4,   
     traj::Vector{OfTraj},      
     eps::Float64,              
     step_max::Int,                       
@@ -657,7 +656,7 @@ end
 
 
 
-function get_pixel(i::Int, j::Int, Xcam::Vector{Float64}, params::Params, 
+function get_pixel(i::Int, j::Int, Xcam::MVec4, params::Params, 
                    fovx::Float64, fovy::Float64, freq::Float64)
 
     X = zeros(Float64, NDIM)

@@ -3,7 +3,7 @@ export print_vector, print_matrix
 
 
 
-function print_vector(name::String, vec::Vector{Float64})
+function print_vector(name::String, vec::MVec4)
     """
     Returns a string representation of a vector with the given name.
 
@@ -12,12 +12,12 @@ function print_vector(name::String, vec::Vector{Float64})
     @vec: The vector to be printed.
     """
     println("Vector: $name")
-    for i in 1:length(vec)
+    for i in eachindex(vec)
         print("$(vec[i]) ")
     end
     println()
 end
-function print_matrix(name::String, mat::Array{Float64, 2})
+function print_matrix(name::String, mat::MMat4)
     """
     Returns a string representation of a matrix with the given name.
 
@@ -26,8 +26,8 @@ function print_matrix(name::String, mat::Array{Float64, 2})
     @mat: The matrix to be printed.
     """
     println("Matrix: $name")
-    for i in 1:size(mat, 1)
-        for j in 1:size(mat, 2)
+    for i in axes(mat, 1)
+        for j in axes(mat, 2)
             @printf("%.15e ", mat[i, j])
         end
         println()

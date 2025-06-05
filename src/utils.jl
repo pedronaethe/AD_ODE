@@ -1,7 +1,7 @@
 
 export set_Econ_from_trial, normalize_vector
 
-function set_Econ_from_trial(defdir::Int, trial::Vector{Float64})
+function set_Econ_from_trial(defdir::Int, trial::MVec4)
     """
     Copy the trial vector, however, if the norm of the trial vector is small, set it to default value.
 
@@ -9,7 +9,7 @@ function set_Econ_from_trial(defdir::Int, trial::Vector{Float64})
     @defdir: Direction to define the tetrad vector.
     @trial: Trial vector to set the tetrad vector.
     """
-    Econ::Vector{Float64} = zeros(Float64, 4)
+    Econ = MVec4(undef)
     norm = sum(abs.(trial[2:4])) 
     for k in 1:4
         if norm <= SMALL
@@ -21,7 +21,7 @@ function set_Econ_from_trial(defdir::Int, trial::Vector{Float64})
     return Econ
 end
 
-function normalize_vector(vcon::Vector{Float64}, Gcov::Array{Float64,2})
+function normalize_vector(vcon::MVec4, Gcov::MMat4)
     """
     Forcing the vector to |v.v| = 1.
 
@@ -46,7 +46,7 @@ function normalize_vector(vcon::Vector{Float64}, Gcov::Array{Float64,2})
     return vcon_out
 end
 
-function project_out(vcona::Vector{Float64}, vconb::Vector{Float64}, Gcov::Array{Float64,2})
+function project_out(vcona::MVec4, vconb::MVec4, Gcov::MMat4)
     """
     Projects out the component of vcona along vconb using the metric tensor. Output is orthogonal to vconb.
 
@@ -87,7 +87,7 @@ end
 
 
 
-function check_handedness(Econ::Array{Float64,2}, Gcov::Array{Float64,2})
+function check_handedness(Econ::MMat4, Gcov::MMat4)
     """
     This will check the handness of the tetrad basis. +1 if right-handed, -1 if left-handed.
 
