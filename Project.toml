@@ -2,6 +2,7 @@
 DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+Krang = "54806c32-d51a-438d-8447-e0041be2fbfb"
 LSODA = "7f56f5a3-f504-529b-bc02-0b1fe5e64312"
 LineSearches = "d3d80556-e9d4-5f37-9878-2ab0fcc64255"
 MCMCChains = "c7f686f2-ff18-58e9-bc7b-31028e88f75d"

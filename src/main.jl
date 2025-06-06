@@ -2,7 +2,7 @@ using Printf
 using Base.Threads
 using LinearAlgebra
 using StaticArrays
-
+using Krang
 #Muttable 4-dimensional vector allocated on the stack
 const MVec4  = MVector{4,Float64}
 #Immutable 4-dimensional vector array allocated on the stack
@@ -83,6 +83,29 @@ function get_pixel(i::Int, j::Int, Xcam::MVec4, params::Params, fovx::Float64, f
 end
 
 
+function calcKcon(sr::Float64, sθ::Float64, r::Float64, θ::Float64, ϕ::Float64, metric::Kerr, αmin::Float64, αmax::Float64, βmin::Float64, βmax::Float64, θo::Float64, res::Int, I, J)
+    """
+    Calculates the covariant 4-velocity of the photon in internal coordinates.
+    
+    Observations:
+    - We follow the equation 9 of Gelles et al.,2021 https://arxiv.org/pdf/2105.09440
+    - The function Krang.p_bl_d returns the wavevector in BL coordinates, so we transform for the natural coordinates.
+    """
+    Kcovbl = MVec4(undef)
+    α = αmin + (αmax - αmin) * (I - 1) / (res - 1)
+    β = βmin + (βmax - βmin) * (J - 1) / (res - 1)
+    η = Krang.η(metric, α, β, θo)
+    λ = Krang.λ(metric, α, θo)
+    X = MVec4(-1, log(r), θ/π, ϕ)
+    Kcovbl = Krang.p_bl_d(metric, r, θ, η, λ, true, true)
+    KcovKS = bl_to_ks(X, MVec4(Kcovbl))
+    KcovNC = vec_from_ks(X, KcovKS)
+    gcov = gcov_func(X)
+    gcon = gcon_func(gcov)
+    KconNC = flip_index(KcovNC, gcon)
+
+    return KconNC
+end
 
 function main()
     @time begin
@@ -112,11 +135,78 @@ function main()
         println("DX = $DX, DY = $DY")
         println("Running on ", Threads.nthreads(), " threads")
 
+        if(USE_KRANG)
+            metric = Krang.Kerr(0.99);
+            θo = 60. * π / 180;
+            αmin, αmax = -3.0, 3.0
+            βmin, βmax = -3.0, 3.0
+            res = 4
+            camera = Krang.IntensityCamera(metric, θo, αmin, αmax, βmin, βmax, res);
+            lines = Krang.generate_ray.(camera.screen.pixels, 1_000)
+
+
+            for idx in eachindex(lines)
+                println("Processing Pixel $idx")
+                J = fld(idx - 1, res) + 1
+                I = mod(idx - 1, res) + 1
+                line = lines[idx]
+                nstep = length(line)
+                # Print the field names of the struct type of pt
+                t = [pt.ts for pt in line]
+                r = [pt.rs for pt in line]
+                th = [pt.θs for pt in line]
+                phi = [pt.ϕs for pt in line]
+                X = [t, log.(r), th/π, phi]
+                sr = [pt.νr for pt in line]
+                sθ = [pt.νθ for pt in line]
+                dl = sqrt.((diff(t).^2 + diff(r).^2 + diff(th).^2 + diff(phi).^2))
+                Kcon = zeros(Float64, nstep, NDIM)
+                for k in 1:nstep
+                    Kcon[k, :] = calcKcon((-1.)^(sr[k]), (-1.)^(sθ[k]), r[k], th[k], phi[k], metric, αmin, αmax, βmin, βmax, θo, res, I, J)
+                end
+                traj = [OfTraj(dl[k], MVec4(X[1][k], X[2][k], X[3][k], X[4][k]),
+                                    MVec4(Kcon[k,1], Kcon[k,2], Kcon[k,3], Kcon[k,4]),
+                                    MVec4(undef), MVec4(undef)) for k in 1:(nstep-1)]
+                Xi = MVec4(undef)
+                Kconi = MVec4(undef)
+                Xf = MVec4(undef)
+                Kconf = MVec4(undef)
+
+                for k in 1:NDIM
+                    Xi[k] = traj[nstep-1].X[k]
+                    Kconi[k] = traj[nstep-1].Kcon[k]
+                end
+                ji, ki = get_analytic_jk(Xi, Kconi, freqcgs)
+                #println("Pixel ($i, $j) has total nstep = $nstep")
+                Intensity= 0.0
+                while(nstep >= 2)
+                    for k in 1:NDIM
+                        Xf[k] = traj[nstep - 1].X[k]
+                        Kconf[k] = traj[nstep - 1].Kcon[k]
+                    end
+
+
+                    if !radiating_region(Xf)
+                        nstep -= 1
+                        continue
+                    end
+
+                    jf, kf = get_analytic_jk(Xf, Kconf, freqcgs)
+
+                    Intensity = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)        
+                    ji = jf
+                    ki = kf
+                    nstep -= 1
+                end 
+            end
+        end
+        return
+        
         for i in 0:(nx - 1)
             println("Processing pixel row ($i)")
             Threads.@threads for j in 0:(ny - 1)
-                #Here, we solve the geodesics and save each point of the trajectory
                 traj, nstep, = get_pixel(i, j, Xcam, p, fovx, fovy, freq)
+
                 # if(i == 2 && j == 1)
                 #     println("Trajectory for pixel ($i, $j):")
                 #     for step in 1:nstep
@@ -138,7 +228,7 @@ function main()
                 end
                 ji, ki = get_analytic_jk(Xi, Kconi, freqcgs)
                 #println("Pixel ($i, $j) has total nstep = $nstep")
-                Intensity::Float64 = 0.0
+                Intensity= 0.0
                 while(nstep >= 2)
                     for k in 1:NDIM
                         Xf[k] = traj[nstep - 1].X[k]
@@ -214,7 +304,8 @@ const cstopx = [0.0, log(Rout), 1.0, 2.0 * π]
 const R0 = 0
 const Rstop = 10000.0
 const MBH = 4.063e6 * MSUN
-const L_unit = GNEWT * MBH / (CL * CL);
+const L_unit = GNEWT * MBH / (CL * CL)
+const USE_KRANG = true
 
 main()
 GC.gc()

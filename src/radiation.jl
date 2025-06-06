@@ -30,6 +30,10 @@ function get_analytic_jk(X, Kcon, freqcgs::Float64)
 
     Ucon, Ucov, Bcon, Bcov = get_model_4vel(X)
     ν::Float64 = get_fluid_nu(Kcon, Ucov)
+    if(ν <= 0.)
+        println("At X = $X, Kcon = $Kcon")
+        error("Frequency must be positive, got ν = $ν")
+    end
     jnu_inv = max(Ne * (ν/freqcgs)^(-α)/ν^2, 0.0)
     knu_inv = max((A * Ne * (ν/freqcgs)^(-(α + 2.5)) + 1.e-54) * ν, 0.0)
     return jnu_inv, knu_inv
