@@ -31,11 +31,14 @@ function get_analytic_jk(X, Kcon, freqcgs::Float64)
     Ucon, Ucov, Bcon, Bcov = get_model_4vel(X)
     ν::Float64 = get_fluid_nu(Kcon, Ucov)
     if(ν <= 0.)
-        println("At X = $X, Kcon = $Kcon")
+        println("At X = $X\n Kcon = $Kcon")
         error("Frequency must be positive, got ν = $ν")
     end
-    jnu_inv = max(Ne * (ν/freqcgs)^(-α)/ν^2, 0.0)
-    knu_inv = max((A * Ne * (ν/freqcgs)^(-(α + 2.5)) + 1.e-54) * ν, 0.0)
+    # if(exp(X[2]) < 100 && exp(X[2]) > 50)
+    #     println("Ne = $Ne, ν = $ν, exp(X[2]) = $(exp(X[2]))")
+    # end
+    jnu_inv = max(Ne * (ν/freqcgs)^(-α_analytic)/ν^2, 0.0)
+    knu_inv = max((A * Ne * (ν/freqcgs)^(-(α_analytic + 2.5)) + 1.e-54) * ν, 0.0)
     return jnu_inv, knu_inv
 
 end
@@ -47,7 +50,7 @@ function radiating_region(X::MVec4)
     @X: Vector of position coordinates in internal coordinates.
     """
     r, _ = bl_coord(X)
-    return (r > Rh + 0.0001 && r > 1. && r < 1000.0)
+    return (r > (Rh + 0.0001) && r > 1. && r < 1000.0)
 end
 
 function approximate_solve(Ii, ji, ki, jf, kf, dl)

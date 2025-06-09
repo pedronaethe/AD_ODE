@@ -73,7 +73,8 @@ function gcon_func(gcov::MMat4)
     gcon = inv(gcov)
     if any(isnan.(gcon)) || any(isinf.(gcon))
         @error "Singular gcov encountered in gconKS!"
-        @info "gcov = $gcov"
+        print_matrix("gcov", gcov)
+        print_matrix("gcon", gcon)
         error("Singular gcov encountered, cannot compute gcon.")
     end
     return gcon

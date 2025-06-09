@@ -89,7 +89,7 @@ end
 
 function vec_from_ks(X::MVec4, v_ks::MVec4)
     """
-    Converts a 4-vector from Kerr-Schild coordinates to the natural coordinate system.
+    Converts a 4-vector from Kerr-Schild coordinates to the native coordinate system.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
     @v_ks: 4-vector in Kerr-Schild coordinates.

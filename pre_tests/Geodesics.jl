@@ -674,11 +674,6 @@ function get_pixel(i::Int, j::Int, Xcam::MVec4, params::Params,
     nstep = trace_geodesic(X, Kcon, traj, params.eps, params.maxnstep)
     resize!(traj, length(traj)) 
 
-    # for i in 1:nstep
-    #     r, th = bl_coord(traj[i].X)
-    #     @printf("Step %d: R = %.15f, Theta = %.15f\n", i, r, th)
-    #     @printf("Kcon: [%.15e, %.15e, %.15e, %.15e]\n", traj[i].Kcon[1], traj[i].Kcon[2], traj[i].Kcon[3], traj[i].Kcon[4])
-    # end
     if nstep >= params.maxnstep - 1
         @error "Max number of steps exceeded at pixel ($i, $j)"
     end

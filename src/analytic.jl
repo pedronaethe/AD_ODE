@@ -2,10 +2,10 @@ include("metrics.jl")
 export get_model_4vel, get_model_ne
 
 #Model parameters (adjust spin in main.jl)
-const A = 1.e6
-const α = 0.0
-const height = (100. /3.)
-const l0 = 1.0
+const A = 0.0
+const α_analytic = -3.0
+const height = (0.0)
+const l0 = 0.0
 
 function get_model_4vel(X::MVec4)
     """

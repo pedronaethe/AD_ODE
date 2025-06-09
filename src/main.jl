@@ -83,40 +83,167 @@ function get_pixel(i::Int, j::Int, Xcam::MVec4, params::Params, fovx::Float64, f
 end
 
 
-function calcKcon(sr::Float64, sθ::Float64, r::Float64, θ::Float64, ϕ::Float64, metric::Kerr, αmin::Float64, αmax::Float64, βmin::Float64, βmax::Float64, θo::Float64, res::Int, I, J)
+function calcKcon(sr::Bool, sθ::Bool, r::Float64, θ::Float64, ϕ::Float64, metric::Kerr, αmin::Float64, αmax::Float64, βmin::Float64, βmax::Float64, θo::Float64, res::Int, I, J)
     """
-    Calculates the covariant 4-velocity of the photon in internal coordinates.
+    Calculates the covariant 4-velocity of the photon for each point in the geodesics in internal coordinates.
     
     Observations:
-    - We follow the equation 9 of Gelles et al.,2021 https://arxiv.org/pdf/2105.09440
-    - The function Krang.p_bl_d returns the wavevector in BL coordinates, so we transform for the natural coordinates.
+    - We follow the equation 9 of Gelles et al. 2021 https://arxiv.org/pdf/2105.09440
+    - The function Krang.p_bl_d returns the wavevector in BL coordinates, so we transform for the native coordinates.
     """
-    Kcovbl = MVec4(undef)
+    #Calculate what alpha and beta to use for this pixel based on the pixel's index I and J
     α = αmin + (αmax - αmin) * (I - 1) / (res - 1)
     β = βmin + (βmax - βmin) * (J - 1) / (res - 1)
+
+    #Calculate Kcov following the equations in Gelles et al. 2021
     η = Krang.η(metric, α, β, θo)
     λ = Krang.λ(metric, α, θo)
-    X = MVec4(-1, log(r), θ/π, ϕ)
-    Kcovbl = Krang.p_bl_d(metric, r, θ, η, λ, true, true)
-    KcovKS = bl_to_ks(X, MVec4(Kcovbl))
-    KcovNC = vec_from_ks(X, KcovKS)
-    gcov = gcov_func(X)
-    gcon = gcon_func(gcov)
-    KconNC = flip_index(KcovNC, gcon)
+    X = MVec4(0, log(r), θ, ϕ)
+    Kcovbl = Krang.p_bl_d(metric, r, θ, η, λ, sr, sθ) * HPL * 230e9/(ME * CL * CL)
+    #Transform Kcov to Kcon
+    bl_gcov = gcov_bl(r, θ)
+    bl_gcon = gcon_func(bl_gcov)
+    KconBL = flip_index(MVec4(Kcovbl), bl_gcon)
+
+    #Transform from BL to KS coordinates
+    KconKS = bl_to_ks(X, KconBL)
+
+    #Now convert to Native Coordinates
+    KconNC = vec_from_ks(X, KconKS)
 
     return KconNC
+end
+
+function calculate_intensity_krang(freqcgs::Float64, nx::Int, ny::Int, scale_factor::Float64, Dsource::Float64)
+    Image =  zeros(Float64, nx, ny)
+    metric = Krang.Kerr(a);
+    θo = 60. * π / 180;
+    αmin, αmax = -6.0 , 6.0
+    βmin, βmax = -6.0 , 6.0
+    res = 4
+    camera = Krang.IntensityCamera(metric, θo, αmin, αmax, βmin, βmax, res);
+    lines = Krang.generate_ray.(camera.screen.pixels, 3_000)
+
+
+    for idx in eachindex(lines)
+        I = div(idx - 1, res) + 1
+        J = mod(idx - 1, res) + 1
+        println("Processing Pixel ($I, $J)")
+        line = lines[idx]
+        nstep = length(line)
+
+        t = [pt.ts for pt in line]
+        r = [pt.rs for pt in line]
+        th = [pt.θs for pt in line]
+        phi = [pt.ϕs for pt in line]
+        
+        println("Length = $nstep")
+        println("This ray went from r = $(r[1]), ended at $(r[end]) to as close to the BH as r = $(minimum(r))")
+        if any(r .< 0)
+            error("Negative r found in pixel")
+        end
+        
+        #x = MVec4.(0.0, log.(r), th, phi)
+        X = [t, log.(r),th./π, phi]
+
+
+        sr = [pt.νr for pt in line]
+        sθ = [pt.νθ for pt in line]
+        dl = sqrt.((diff(t).^2 + diff(r).^2 + diff(th).^2 + diff(phi).^2))
+        Kcon = zeros(Float64, nstep, NDIM)
+        for k in 1:nstep
+            Kcon[k, :] = calcKcon(sr[k], sθ[k], r[k], th[k], phi[k], metric, αmin, αmax, βmin, βmax, θo, res, I, J)
+        end
+        traj = [OfTraj(dl[k], MVec4(X[1][k], X[2][k], X[3][k], X[4][k]),
+                            MVec4(Kcon[k,1], Kcon[k,2], Kcon[k,3], Kcon[k,4]),
+                            MVec4(undef), MVec4(undef)) for k in 1:(nstep-1)]
+        Xi = MVec4(undef)
+        Kconi = MVec4(undef)
+        Xf = MVec4(undef)
+        Kconf = MVec4(undef)
+
+        for k in 1:NDIM
+            Xi[k] = traj[nstep-1].X[k]
+            Kconi[k] = traj[nstep-1].Kcon[k]
+        end
+        ji, ki = get_analytic_jk(Xi, Kconi, freqcgs)
+        #println("Pixel ($i, $j) has total nstep = $nstep")
+        Intensity= 0.0
+        og_nstep = 0
+        while(nstep >= 2)
+            for k in 1:NDIM
+                Xf[k] = traj[nstep - 1].X[k]
+                Kconf[k] = traj[nstep - 1].Kcon[k]
+            end
+
+            if !radiating_region(Xf)
+                nstep -= 1
+                continue
+            end
+            if(og_nstep == 0)
+                og_nstep = nstep
+            end
+
+            jf, kf = get_analytic_jk(Xf, Kconf, freqcgs)
+            Intensity = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
+            # if(I == 1 && J == 1 && nstep == og_nstep)
+            #     r, th = bl_coord(Xf)
+            #     @printf("At step %d \n", nstep)
+            #     @printf("Radius = %.15e, theta = %.15e\n", r, th)
+            #     @printf("X = [%.15e, %.15e, %.15e, %.15e]\n", 
+            #         Xf[1], Xf[2], Xf[3], Xf[4])
+            #     @printf("Kcon = [%.15e, %.15e, %.15e, %.15e]\n",
+            #         Kconf[1], Kconf[2], Kconf[3], Kconf[4])
+            #     @printf("jf = %.15e, kf = %.15e, Intensity = %.15e\n", jf, kf, Intensity)
+            #     @printf("ji = %.15e, ki = %.15e\n", ji, ki)
+            #     @printf("dl = %.15e\n\n", traj[nstep - 1].dl)
+            # end 
+            ji = jf
+            ki = kf
+            nstep -= 1
+        end
+        Image[I, J] = Intensity
+        println("Final intensity at pixel ($I, $J): $Intensity \n")
+    end
+
+    Ftot = 0.0
+    Iavg = 0.0
+    Imax = 0.0
+    imax = 0
+    jmax = 0   
+    println("Image processing complete. Calculating total flux and averages...")
+    for i in 1:nx
+        for j in 1:ny
+            Ftot += Image[i, j] * freqcgs^3 * scale_factor
+            Iavg += Image[i, j]
+            if (Image[i,j] * freqcgs^3) > Imax
+                imax = i
+                jmax = j
+                Imax = Image[i, j] * freqcgs^3
+            end
+        end
+    end
+    Iavg *= freqcgs^3/ (nx * ny)
+    @printf("Scale = %.15e\n", scale_factor)
+    println("imax = $imax, jmax = $jmax, Imax = $Imax, Iavg = $Iavg")
+    println("Using freqcgs = $freqcgs, Ftot = $Ftot")
+    println("nuLnu = $(Ftot * Dsource * Dsource * JY * freqcgs * 4.0 * π)")
+
+    open("./output/Image.bin", "w") do file
+        write(file, Image)
+    end
 end
 
 function main()
     @time begin
         println()
         println("Model Parameters: A = $A, α = $α, height = $height, l0 = $l0, alpha = $α")
-        println("MBH = $MBH, L_unit = $L_unit")
+        println("MBH = $MBH, L_unit = $L_unit, T_unit = $(L_unit / CL)")
         println("Rstop = $Rstop, Rh = $Rh")
-        nx, ny = 128,128
+        nx, ny = 4,4
         freqcgs = 230e9
         freq = freqcgs * HPL/(ME * CL * CL) 
-        cam_dist, cam_theta_angle, cam_phi_angle = 1000.0, 60., 0.
+        cam_dist, cam_theta_angle, cam_phi_angle = 5000.0, 60., 0.
         Dsource = 7.778e3 * PC
         Xcam = camera_position(cam_dist, cam_theta_angle, cam_phi_angle)
         p = Params(0.0, 0.0, nx, ny, 0.0, 0.01, 50000)
@@ -136,77 +263,16 @@ function main()
         println("Running on ", Threads.nthreads(), " threads")
 
         if(USE_KRANG)
-            metric = Krang.Kerr(0.99);
-            θo = 60. * π / 180;
-            αmin, αmax = -3.0, 3.0
-            βmin, βmax = -3.0, 3.0
-            res = 4
-            camera = Krang.IntensityCamera(metric, θo, αmin, αmax, βmin, βmax, res);
-            lines = Krang.generate_ray.(camera.screen.pixels, 1_000)
-
-
-            for idx in eachindex(lines)
-                println("Processing Pixel $idx")
-                J = fld(idx - 1, res) + 1
-                I = mod(idx - 1, res) + 1
-                line = lines[idx]
-                nstep = length(line)
-                # Print the field names of the struct type of pt
-                t = [pt.ts for pt in line]
-                r = [pt.rs for pt in line]
-                th = [pt.θs for pt in line]
-                phi = [pt.ϕs for pt in line]
-                X = [t, log.(r), th/π, phi]
-                sr = [pt.νr for pt in line]
-                sθ = [pt.νθ for pt in line]
-                dl = sqrt.((diff(t).^2 + diff(r).^2 + diff(th).^2 + diff(phi).^2))
-                Kcon = zeros(Float64, nstep, NDIM)
-                for k in 1:nstep
-                    Kcon[k, :] = calcKcon((-1.)^(sr[k]), (-1.)^(sθ[k]), r[k], th[k], phi[k], metric, αmin, αmax, βmin, βmax, θo, res, I, J)
-                end
-                traj = [OfTraj(dl[k], MVec4(X[1][k], X[2][k], X[3][k], X[4][k]),
-                                    MVec4(Kcon[k,1], Kcon[k,2], Kcon[k,3], Kcon[k,4]),
-                                    MVec4(undef), MVec4(undef)) for k in 1:(nstep-1)]
-                Xi = MVec4(undef)
-                Kconi = MVec4(undef)
-                Xf = MVec4(undef)
-                Kconf = MVec4(undef)
-
-                for k in 1:NDIM
-                    Xi[k] = traj[nstep-1].X[k]
-                    Kconi[k] = traj[nstep-1].Kcon[k]
-                end
-                ji, ki = get_analytic_jk(Xi, Kconi, freqcgs)
-                #println("Pixel ($i, $j) has total nstep = $nstep")
-                Intensity= 0.0
-                while(nstep >= 2)
-                    for k in 1:NDIM
-                        Xf[k] = traj[nstep - 1].X[k]
-                        Kconf[k] = traj[nstep - 1].Kcon[k]
-                    end
-
-
-                    if !radiating_region(Xf)
-                        nstep -= 1
-                        continue
-                    end
-
-                    jf, kf = get_analytic_jk(Xf, Kconf, freqcgs)
-
-                    Intensity = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)        
-                    ji = jf
-                    ki = kf
-                    nstep -= 1
-                end 
-            end
+            calculate_intensity_krang(freqcgs, nx, ny, scale_factor, Dsource)
         end
-        return
         
-        for i in 0:(nx - 1)
-            println("Processing pixel row ($i)")
-            Threads.@threads for j in 0:(ny - 1)
-                traj, nstep, = get_pixel(i, j, Xcam, p, fovx, fovy, freq)
 
+        for i in 0:(nx - 1)
+            Threads.@threads for j in 0:(ny - 1)
+                println("Processing pixel ($i, $j)")
+                traj, nstep, = get_pixel(i, j, Xcam, p, fovx, fovy, freq)
+                println("Pixel ($i, $j) has total nstep = $nstep")
+                println("This ray went from r = $(exp(traj[1].X[2])) to as close to the BH as r = $(exp(minimum([t.X[2] for t in traj])))")
                 # if(i == 2 && j == 1)
                 #     println("Trajectory for pixel ($i, $j):")
                 #     for step in 1:nstep
@@ -229,6 +295,7 @@ function main()
                 ji, ki = get_analytic_jk(Xi, Kconi, freqcgs)
                 #println("Pixel ($i, $j) has total nstep = $nstep")
                 Intensity= 0.0
+                og_nstep = 0
                 while(nstep >= 2)
                     for k in 1:NDIM
                         Xf[k] = traj[nstep - 1].X[k]
@@ -240,11 +307,14 @@ function main()
                         nstep -= 1
                         continue
                     end
+                    if(og_nstep == 0)
+                        og_nstep = nstep
+                    end
 
                     jf, kf = get_analytic_jk(Xf, Kconf, freqcgs)
 
                     Intensity = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)    
-                    # if(i == 0 && j == 0)
+                    # if(i == 0 && j == 0 && nstep == og_nstep)
                     #     r, th = bl_coord(Xf)
                     #     @printf("At step %d \n", nstep)
                     #     @printf("Radius = %.15e, theta = %.15e\n", r, th)
@@ -261,7 +331,7 @@ function main()
                     nstep -= 1
                 end 
                 Image[i + 1, j + 1] = Intensity
-                #println("Final intensity at pixel ($i, $j): $Intensity \n")
+                println("Final intensity at pixel ($i, $j): $Intensity \n")
                 # error("")
             end
         end
@@ -296,7 +366,7 @@ function main()
 end
 
 # Miscellaneous constants
-const a = 0.9
+const a = 0.89
 const Rh = 1 + sqrt(1. - a * a);
 const Rout = 1000.0
 const cstartx = [0.0, log(Rh), 0.0, 0.0]
