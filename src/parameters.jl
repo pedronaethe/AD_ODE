@@ -42,9 +42,9 @@ const phicam = 0.
 const krang_points = 2_500
 ## Krang camera parameters
 # α is the x coordinate in the image plane
-const αmin, αmax = -19.0 , 19.0
+const αmin, αmax = -5.7 , 5.7
 # β is the y coordinate in the image plane
-const βmin, βmax = -19.0 , 19.0
+const βmin, βmax = -5.7 , 5.7
 
 ## Ipole integration parameters
 # Image size in gravitational radius units (Rg) used to calculate the field of view (ipole integration only)

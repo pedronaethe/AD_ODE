@@ -184,8 +184,8 @@ function calculate_intensity_krang(scale_factor_ipole::Float64)
     θo = thcam * π / 180;
     dα = (αmax - αmin) / (nx)
     dβ = (βmax - βmin) / (ny)
-    #scale_factor = dα * dβ * L_unit^2 / (Dsource * Dsource) / JY
-    scale_factor = scale_factor_ipole
+    scale_factor = dα * dβ * L_unit^2 / (Dsource * Dsource) / JY
+    #scale_factor = scale_factor_ipole
     res = nx
     println("Using krang for geodesics calculations, this may take a while...")
     camera = Krang.IntensityCamera(metric, θo, αmin, αmax, βmin, βmax, res);
@@ -212,7 +212,7 @@ function calculate_intensity_krang(scale_factor_ipole::Float64)
         X = [t, log.(r),th/π, phi]
         # println("StartX = $(t[1]), log(r)=$(log(r[1])), θ=$(th[1]/π), ϕ=$(phi[1])")
 
-        sr = [pt.νr for pt in line]
+        sr = [pt.νr for pt in line]      
         sθ = [pt.νθ for pt in line]
         Kcon = zeros(Float64, nstep, NDIM)
         dl = zeros(Float64, nstep)
@@ -236,11 +236,14 @@ function calculate_intensity_krang(scale_factor_ipole::Float64)
                             MVec4(undef), MVec4(undef)) for k in 1:(nstep-1)]
         integrate_emission!(traj, nstep, Image, I, J)
     end
+
+
     Ftot::Float64 = 0.0
     Iavg::Float64 = 0.0
     Imax::Float64 = 0.0
     imax::Int = 0
     jmax::Int = 0   
+    
     println("Image processing complete. Calculating total flux and averages...")
     for i in 1:nx
         for j in 1:ny
