@@ -23,7 +23,7 @@ const L_unit = GNEWT * MBH * MSUN / CL^2  # Length unit in gravitational radius 
 const USE_KRANG = true
 
 # Number of pixels in the x and y directions of the image
-const nx = ny = 2
+const nx = ny = 40
 
 # Frequency in Hz for the image
 const freqcgs = 230e9
@@ -42,9 +42,9 @@ const phicam = 0.
 const krang_points = 2_500
 ## Krang camera parameters
 # α is the x coordinate in the image plane
-const αmin, αmax = -7.0 , 7.0
+const αmin, αmax = -19.0 , 19.0
 # β is the y coordinate in the image plane
-const βmin, βmax = -7.0 , 7.0
+const βmin, βmax = -19.0 , 19.0
 
 ## Ipole integration parameters
 # Image size in gravitational radius units (Rg) used to calculate the field of view (ipole integration only)
@@ -60,5 +60,5 @@ const maxnstep = 50000
 # Radius at which stop tracking the geodesics (Used only when doing ipole integration)
 const Rstop = 10000.0
 
-#Choosing MODEL
+# Choosing MODEL
 const MODEL = "analytic"  # Options: "analytic", "thin_disk"

@@ -119,7 +119,7 @@ function integrate_emission!(traj::Vector{OfTraj}, nstep::Int, Image::Matrix{Flo
     Xf = MVec4(undef)
     Kconf = MVec4(undef)
     nstep = nstep - 1
-    println("Pixel ($I, $J) with nstep = $nstep")
+    #println("Pixel ($I, $J) with nstep = $nstep")
      for k in 1:NDIM
             Xi[k] = traj[nstep-1].X[k]
             Kconi[k] = traj[nstep-1].Kcon[k]
@@ -175,7 +175,7 @@ function integrate_emission!(traj::Vector{OfTraj}, nstep::Int, Image::Matrix{Flo
         nstep -= 1
     end
     Image[I, J] = Intensity
-    println("Final intensity at pixel ($I, $J): $Intensity \n")
+    #println("Final intensity at pixel ($I, $J): $Intensity \n")
 end
 
 function calculate_intensity_krang(scale_factor_ipole::Float64)
@@ -184,9 +184,10 @@ function calculate_intensity_krang(scale_factor_ipole::Float64)
     θo = thcam * π / 180;
     dα = (αmax - αmin) / (nx)
     dβ = (βmax - βmin) / (ny)
-    scale_factor = dα * dβ * L_unit^2 / (Dsource * Dsource) / JY
+    #scale_factor = dα * dβ * L_unit^2 / (Dsource * Dsource) / JY
     scale_factor = scale_factor_ipole
     res = nx
+    println("Using krang for geodesics calculations, this may take a while...")
     camera = Krang.IntensityCamera(metric, θo, αmin, αmax, βmin, βmax, res);
     lines = Krang.generate_ray.(camera.screen.pixels, krang_points)
 
@@ -195,7 +196,9 @@ function calculate_intensity_krang(scale_factor_ipole::Float64)
         Intensity= 0.0
         I = div(idx - 1, res) + 1
         J = mod(idx - 1, res) + 1
-        #println("Processing Pixel ($I, $J)")
+        if J == 1
+            println("Processing row $I out of $(res)")
+        end
         line = lines[idx]
         nstep = length(line)
 
@@ -205,9 +208,9 @@ function calculate_intensity_krang(scale_factor_ipole::Float64)
         phi = [pt.ϕs for pt in line]
         
         #print where the line started, where it is ending and the minimum value of R
-        println("RayStart r = $(r[1]), Ray Finish r = $(r[end]), min r = $(minimum(r))")
+        # println("RayStart r = $(r[1]), Ray Finish r = $(r[end]), min r = $(minimum(r))")
         X = [t, log.(r),th/π, phi]
-        println("StartX = $(t[1]), log(r)=$(log(r[1])), θ=$(th[1]/π), ϕ=$(phi[1])")
+        # println("StartX = $(t[1]), log(r)=$(log(r[1])), θ=$(th[1]/π), ϕ=$(phi[1])")
 
         sr = [pt.νr for pt in line]
         sθ = [pt.νθ for pt in line]
@@ -225,22 +228,8 @@ function calculate_intensity_krang(scale_factor_ipole::Float64)
             end
             Kcon[k, :] = calcKcon(sr[k], sθ[k], r[k], th[k], phi[k], metric, η, λ, k)
         end
-        println("Start Kcon = $(Kcon[1, :])")
+        # println("Start Kcon = $(Kcon[1, :])")
         dl = sqrt.((diff(X[1]).^2 + diff(X[2]).^2 + diff(X[3]).^2 + diff(X[4]).^2))
-
-        if any(isinf, dl) || any(isnan, dl)
-            println("Found Inf or NaN in dl at pixel ($I, $J)")
-            for k in eachindex(dl)
-                if isinf(dl[k]) || isnan(dl[k])
-                    println("dl[$k] = ", dl[k])
-                    if k <= length(X[1]) - 1
-                        println("X at k:    t=$(X[1][k]), log(r)=$(X[2][k]), θ=$(X[3][k]), ϕ=$(X[4][k])")
-                        println("X at k+1:  t=$(X[1][k+1]), log(r)=$(X[2][k+1]), θ=$(X[3][k+1]), ϕ=$(X[4][k+1])")
-                        println("diff:      Δt=$(X[1][k+1]-X[1][k]), Δlog(r)=$(X[2][k+1]-X[2][k]), Δθ=$(X[3][k+1]-X[3][k]), Δϕ=$(X[4][k+1]-X[4][k])")
-                    end
-                end
-            end
-        end
 
         traj = [OfTraj(dl[k], MVec4(X[1][k], X[2][k], X[3][k], X[4][k]),
                             MVec4(Kcon[k,1], Kcon[k,2], Kcon[k,3], Kcon[k,4]),
