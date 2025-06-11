@@ -20,7 +20,7 @@ function bl_to_ks(X::MVec4, ucon_bl::MVec4)
     Converts the 4-velocity from Boyer-Lindquist coordinates to Kerr-Schild coordinates.
     Parameters:
     @X: Vector of position coordinates in internal coordinates.
-    @ucon_bl: Covariant 4-velocity in Boyer-Lindquist coordinates.
+    @ucon_bl: Contravariant 4-velocity in Boyer-Lindquist coordinates.
     """
     ucon_ks = zero(MVec4)
     r, th = bl_coord(X)
@@ -50,7 +50,7 @@ function set_dxdX(X::MVec4)
     @X: Vector of position coordinates in internal coordinates.
     """
     dxdX = MMat4(undef)
-    hslope = 0.0   
+    hslope = 1.0   
     for mu in 1:NDIM
         for nu in 1:NDIM
             if mu == nu

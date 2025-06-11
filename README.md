@@ -6,6 +6,11 @@ Jipole is a Julia-based code under development that performs radiative transfer 
 ## Current State
 The current version of Jipole focuses on implementing and validating test problems described in Section 3.2 of the [Gold et al. 2020](https://iopscience.iop.org/article/10.3847/1538-4357/ab96c6) by porting the C-based code [ipole](https://github.com/moscibrodzka/ipole) to Julia.
 
+Krang is currently available for geodesics solving and should be activated by using `USE_KRANG = true` in `parameters.jl`.
+
+## Setup parameters:
+The overall parameters are found inside `parameters.jl`, while the model parameters are found inside their respective `.jl` files
+
 ## Running the Project
 To run the code, open a terminal and navigate to the root project directory. Use the following command to start Julia with project-specific dependencies and set the number of threads:
 
@@ -15,4 +20,4 @@ Replace xx with the number of threads you want Julia to use.
 
 Then, in the Julia REPL, run:
 `include("./src/main.jl")`
-This will execute the main driver script.
+This will execute the script.

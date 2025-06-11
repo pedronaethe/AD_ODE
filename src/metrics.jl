@@ -33,9 +33,7 @@ function gcov_func(X::MVec4)
     gcov = zeros(MMat4)
     cth = cos(th)
     sth = abs(sin(th))
-    if(sth < 1e-40)
-        sth = 1e-40
-    end
+
 
     s2 = sth * sth
     rho2 = r * r + a * a * cth * cth
@@ -72,7 +70,7 @@ function gcon_func(gcov::MMat4)
     """
     gcon = inv(gcov)
     if any(isnan.(gcon)) || any(isinf.(gcon))
-        @error "Singular gcov encountered in gconKS!"
+        @error "Singular gcov encountered in gcon"
         print_matrix("gcov", gcov)
         print_matrix("gcon", gcon)
         error("Singular gcov encountered, cannot compute gcon.")
@@ -90,18 +88,39 @@ function gcov_bl(r,th)
     """
     gcov = zeros(MMat4)
     sth = sin(th)
+    if(sth < 1e-40)
+        sth = 10^(-40)
+    end
     cth = cos(th)
     s2 = sth * sth
+    if(r < 1e-40)
+        r = 10^(-40)
+    end
     a2 = a * a
     r2 = r * r
-    DD = 1.0 - 2.0 / r + a2 / r2
+    DD = (1.0 - 2.0 / r + a2 / r2)
     mu = 1.0 + a2 * cth * cth / r2
 
     gcov[1, 1] = -(1.0 - 2.0 / (r * mu))
     gcov[1, 4] = -2.0 * a * s2 / (r * mu)
     gcov[4, 1] = gcov[1, 4]
-    gcov[2, 2] = mu / DD
+    gcov[2, 2] = mu / (DD )
     gcov[3, 3] = r2 * mu
     gcov[4, 4] = r2 * sth * sth * (1.0 + a2 / r2 + 2.0 * a2 * s2 / (r2 * r * mu))
+
+    #if any element of the diagonal is zero print variables
+    if(gcov[1,1] == 0 || gcov[2,2] == 0 || gcov[3,3] == 0 || gcov[4,4] == 0)   
+        @error "Singular gcov encountered in gcov_bl"
+        println("sth $sth, cth $cth, r $r, a $a, r2 $r2, a2 $a2, mu $mu, DD $DD")
+        print_matrix("gcov", gcov)
+        error("Singular gcov encountered, cannot compute gcov_bl.")
+    end
+    #if any (isnan.(gcov)) || any(isinf.(gcov))
+    if any(isnan.(gcov)) || any(isinf.(gcov))
+        @error "Singular gcov encountered in gcov_bl"
+        println("sth $sth, cth $cth, r $r, a $a, r2 $r2, a2 $a2, mu $mu, DD $DD")
+        print_matrix("gcov", gcov)
+        error("Singular gcov encountered, cannot compute gcov_bl.")
+    end
     return gcov
 end

@@ -21,10 +21,6 @@ function init_XK(i::Int, j::Int, Xcam::MVec4, params, fovx::Float64, fovy::Float
 
 
     _, Econ, Ecov = make_camera_tetrad(Xcam)
-    if(i == 0 && j == 0)
-        @warn("Warning! Two different definitions of Kcon in init_XK! One from ipole Ilinois repository and one from Monika's repository.")
-        @warn("Using Ipole's definition")
-    end
     dxoff::Float64 = (i + 0.5 + params.xoff - 0.01) / params.nx - 0.5
     dyoff::Float64 = (j + 0.5 + params.yoff) / params.ny - 0.5
 
@@ -38,11 +34,11 @@ function init_XK(i::Int, j::Int, Xcam::MVec4, params, fovx::Float64, fovy::Float
     # Kcon_tetrad[4] = 1.0
 
     Kcon_tetrad = null_normalize(Kcon_tetrad, 1.0)  
-
     Kcon = tetrad_to_coordinate(Econ, Kcon_tetrad)
     for mu in 1:NDIM
         X[mu] = Xcam[mu]
     end
+
     return X, Kcon
 end
 
@@ -418,7 +414,7 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, eps::Floa
             copy(Kconhalf)    
         ))
     end
-    pop!(traj)
+    #pop!(traj)
     nstep -= 1
 
 

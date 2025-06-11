@@ -1,5 +1,5 @@
 using Printf
-export print_vector, print_matrix
+export print_vector, print_matrix, check_parameters
 
 
 
@@ -33,3 +33,18 @@ function print_matrix(name::String, mat::MMat4)
         println()
     end
 end
+
+function check_parameters()
+    """
+    Checks the consistency of the parameters used in the simulation.
+    """
+
+    if(MODEL == "thin_disk")
+        error("The thin disk model is not implemented yet!")
+    end
+
+    if(nx != ny && Krang == true)
+        error("Currently Nx must be equal to Ny when using Krang!")
+    end
+end
+

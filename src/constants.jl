@@ -12,3 +12,5 @@ const M_unit = 1.
 const RHO_unit = 3.e-18
 const PC = 3.085678e18 
 const JY = 1.0e-23
+const SIG = 5.670400e-5
+const KBOL = 1.3806505e-16

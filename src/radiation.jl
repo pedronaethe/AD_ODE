@@ -8,49 +8,18 @@ function get_fluid_nu(Kcon::MVec4, Ucov::MVec4)
     @Ucov: Covariant 4-velocity of the fluid in internal coordinates.
     """
     nu = - (Kcon[1] * Ucov[1] + Kcon[2] * Ucov[2] + Kcon[3] * Ucov[3] + Kcon[4] * Ucov[4]) * ME * CL * CL / HPL
+    nu = abs(nu)
     return nu
 end
 
-
-
-
-function get_analytic_jk(X, Kcon, freqcgs::Float64)
-    """
-    Computes the emissivity and absorption coefficient for the model at a given position and frequency.
-    Parameters:
-    @X: Vector of position coordinates in internal coordinates.
-    @Kcon: Covariant 4-vector of the photon in internal coordinates.
-    @freqcgs: pivotal frequency in cgs units.
-    """
-    Ne = get_model_ne(X)
-    
-    if (Ne <= 0.)
-        return 0, 0
+function get_jk(X::MVec4, Kcon::MVec4, freqcgs::Float64)
+    if(MODEL == "analytic")
+        return get_analytic_jk(X, Kcon, freqcgs)
+    elseif(MODEL == "thin_disk")
+        return get_thindisk_jk(X, Kcon, freqcgs)
+    else
+        error("Unknown model: $MODEL")
     end
-
-    Ucon, Ucov, Bcon, Bcov = get_model_4vel(X)
-    ν::Float64 = get_fluid_nu(Kcon, Ucov)
-    if(ν <= 0.)
-        println("At X = $X\n Kcon = $Kcon")
-        error("Frequency must be positive, got ν = $ν")
-    end
-    # if(exp(X[2]) < 100 && exp(X[2]) > 50)
-    #     println("Ne = $Ne, ν = $ν, exp(X[2]) = $(exp(X[2]))")
-    # end
-    jnu_inv = max(Ne * (ν/freqcgs)^(-α_analytic)/ν^2, 0.0)
-    knu_inv = max((A * Ne * (ν/freqcgs)^(-(α_analytic + 2.5)) + 1.e-54) * ν, 0.0)
-    return jnu_inv, knu_inv
-
-end
-
-function radiating_region(X::MVec4)
-    """
-    Checks if the position is within the radiating region.
-    Parameters:
-    @X: Vector of position coordinates in internal coordinates.
-    """
-    r, _ = bl_coord(X)
-    return (r > (Rh + 0.0001) && r > 1. && r < 1000.0)
 end
 
 function approximate_solve(Ii, ji, ki, jf, kf, dl)
@@ -78,6 +47,14 @@ function approximate_solve(Ii, ji, ki, jf, kf, dl)
     else
     efac = exp(-dtau)
     If = Ii * efac + (javg / kavg) * (1. - efac)
+    end
+
+    if(isnan(If) || isinf(If))
+        @error "Invalid intensity computed" If
+        println("Ii = $Ii, ji = $ji, ki = $ki, jf = $jf, kf = $kf, dl = $dl")
+        println("dtau = $dtau, javg = $javg, kavg = $kavg")
+        println("efac = $(exp(-dtau))")
+        error("Invalid intensity computed: $If")
     end
 
     return If

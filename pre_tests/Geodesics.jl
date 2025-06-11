@@ -817,8 +817,8 @@ const GNEWT = 6.6742e-8
 const CL = 2.99792458e10 
 const MSUN = 1.989e33 
 const MUAS_PER_RAD = 2.06265e11
-const MBH = 4.5e6 * MSUN
-const L_unit = GNEWT * MBH / (CL * CL);
+const MBH = 4.5e6
+const L_unit = GNEWT * MBH * MSUN / (CL * CL);
 const PC = 3.085678e18 
 main()
 GC.gc()
