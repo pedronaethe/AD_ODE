@@ -147,7 +147,7 @@ function integrate_emission!(traj::Vector{OfTraj}, nstep::Int, Image::Matrix{Flo
         jf, kf = get_jk(Xf, Kconf, freqcgs)
         Intensity::Float64 = approximate_solve(Intensity, ji, ki, jf, kf, traj[nstep - 1].dl)
 
-        # if(I == 1 && J == 1 && nstep > 2300)
+        # if(I == 15 && J == 15)
         #     println("At step $nstep:")
         #     println("r = $(exp(Xf[2])), th = $(Xf[3] * π)")
         #     println("Kcon = $(Kconf[1]), $(Kconf[2]), $(Kconf[3]), $(Kconf[4])")
@@ -254,9 +254,7 @@ function calculate_intensity_krang(scale_factor_ipole::Float64, rad_fovx::Float6
             if(r[k] == 0)
                 break
             end
-            if (r[k] < (Rh + 0.53))
-                println("At pixel[$I, $J], step = $k")
-                println("r[k - 1] = $(r[k-1]), r[k] = $(r[k])")
+            if (r[k] < (Rh + 0.5 ))
                 r[k] = 0.0
                 break
             end
@@ -276,7 +274,6 @@ function calculate_intensity_krang(scale_factor_ipole::Float64, rad_fovx::Float6
                           diff(X[2][1:last_valid_index]).^2 .+ 
                           diff(X[3][1:last_valid_index]).^2 .+ 
                           diff(X[4][1:last_valid_index]).^2))
-
         traj = [OfTraj(dl[k], MVec4(X[1][k], X[2][k], X[3][k], X[4][k]),
                             MVec4(Kcon[k,1], Kcon[k,2], Kcon[k,3], Kcon[k,4]),
                             MVec4(undef), MVec4(undef)) for k in 1:last_valid_index]

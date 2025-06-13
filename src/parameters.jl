@@ -37,9 +37,9 @@ const rcam = 1.e3
 # Camera polar angle in degrees
 const thcam = 60.
 # Camera azimuthal angle in degrees
-const phicam = 0.
+const phicam = - 90.
 
-const krang_points = 2_300
+const krang_points = 1_000
 ## Krang camera parameters
 # α is the x coordinate in the image plane
 const αmin, αmax = -5.7 , 5.7
