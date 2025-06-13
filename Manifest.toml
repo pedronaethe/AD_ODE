@@ -1122,9 +1122,9 @@ version = "0.21.4"
 
 [[deps.JacobiElliptic]]
 deps = ["DocStringExtensions", "StaticArrays"]
-git-tree-sha1 = "6e9312cab1340b2331e88a9316125b0dc2012ec3"
+git-tree-sha1 = "25f2d0297d919340f7379c20fe284778ddab44a3"
 uuid = "2a8b799e-c098-4961-872a-356c768d184c"
-version = "0.3.5"
+version = "0.3.6"
 
     [deps.JacobiElliptic.extensions]
     JacobiEllipticEnzymeExt = "Enzyme"
@@ -1157,9 +1157,9 @@ weakdeps = ["FastBroadcast"]
 
 [[deps.KernelAbstractions]]
 deps = ["Adapt", "Atomix", "InteractiveUtils", "MacroTools", "PrecompileTools", "Requires", "StaticArrays", "UUIDs"]
-git-tree-sha1 = "80d268b2f4e396edc5ea004d1e0f569231c71e9e"
+git-tree-sha1 = "602c0e9efadafb8abfe8281c3fbf9cf6f406fc03"
 uuid = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
-version = "0.9.34"
+version = "0.9.35"
 weakdeps = ["EnzymeCore", "LinearAlgebra", "SparseArrays"]
 
     [deps.KernelAbstractions.extensions]
@@ -1175,9 +1175,11 @@ version = "0.6.9"
 
 [[deps.Krang]]
 deps = ["DocStringExtensions", "GeometryBasics", "JacobiElliptic", "KernelAbstractions", "PolarizedTypes", "Roots", "Rotations", "StaticArrays"]
-git-tree-sha1 = "afbd9761e772127eb5a31d97f0750dc86a4d91f5"
+git-tree-sha1 = "0a03b6fa2aa964afae209e3ab90978fd73715a20"
+repo-rev = "finite-observer"
+repo-url = "https://github.com/dominic-chang/Krang.jl.git"
 uuid = "54806c32-d51a-438d-8447-e0041be2fbfb"
-version = "0.4.0"
+version = "0.4.1"
 
 [[deps.Krylov]]
 deps = ["LinearAlgebra", "Printf", "SparseArrays"]

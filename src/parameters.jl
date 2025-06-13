@@ -39,7 +39,7 @@ const thcam = 60.
 # Camera azimuthal angle in degrees
 const phicam = 0.
 
-const krang_points = 2_500
+const krang_points = 2_300
 ## Krang camera parameters
 # α is the x coordinate in the image plane
 const αmin, αmax = -5.7 , 5.7
@@ -62,3 +62,7 @@ const Rstop = 10000.0
 
 # Choosing MODEL
 const MODEL = "analytic"  # Options: "analytic", "thin_disk"
+
+#print geodesics to ./output/pixelij_coordinates.txt file
+const print_geodesics = false
+

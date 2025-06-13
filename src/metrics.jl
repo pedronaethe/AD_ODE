@@ -56,6 +56,16 @@ function gcov_func(X::MVec4)
     gcov[4, 2] = gcov[2, 4]
     gcov[4, 4] =
         s2 * (rho2 + a * a * s2 * (1. + 2. * r / rho2)) * pfac * pfac
+
+    # Assert if the diagonal elements are zero
+    if gcov[1, 1] == 0 || gcov[2, 2] == 0 || gcov[3, 3] == 0 || gcov[4, 4] == 0
+        @error "Singular gcov encountered in gcov_func"
+        println("sth $sth, cth $cth, r $r, a $a, rho2 $rho2, tfac $tfac, rfac $rfac, hfac $hfac, pfac $pfac")
+        println("X = $X")
+        println("th = $th")
+        print_matrix("gcov", gcov)
+        error("Singular gcov encountered, cannot compute gcov_func.")
+end
     
         return gcov
 end

@@ -124,6 +124,7 @@ function integrate_emission!(traj::Vector{OfTraj}, nstep::Int, Image::Matrix{Flo
             Xi[k] = traj[nstep-1].X[k]
             Kconi[k] = traj[nstep-1].Kcon[k]
     end
+    
     ji, ki = get_analytic_jk(Xi, Kconi, freqcgs)
     Intensity = 0.0
     while(nstep >= 2)
@@ -178,17 +179,19 @@ function integrate_emission!(traj::Vector{OfTraj}, nstep::Int, Image::Matrix{Flo
     #println("Final intensity at pixel ($I, $J): $Intensity \n")
 end
 
-function calculate_intensity_krang(scale_factor_ipole::Float64)
+function calculate_intensity_krang(scale_factor_ipole::Float64, rad_fovx::Float64, rad_fovy::Float64)
     Image =  zeros(Float64, nx, ny)
     metric = Krang.Kerr(a);
     θo = thcam * π / 180;
     dα = (αmax - αmin) / (nx)
     dβ = (βmax - βmin) / (ny)
     scale_factor = dα * dβ * L_unit^2 / (Dsource * Dsource) / JY
-    #scale_factor = scale_factor_ipole
+    scale_factor = scale_factor_ipole
     res = nx
     println("Using krang for geodesics calculations, this may take a while...")
-    camera = Krang.IntensityCamera(metric, θo, αmin, αmax, βmin, βmax, res);
+    println("rad_fovx = $rad_fovx, rad_fovy = $rad_fovy [rad]")
+    camera = Krang.IntensityCamera(metric, θo, 1000.0,-rad_fovx, rad_fovx, -rad_fovy, rad_fovy, res);
+    #camera = Krang.IntensityCamera(metric, θo, αmin, αmax, βmin, βmax, res);
     lines = Krang.generate_ray.(camera.screen.pixels, krang_points)
 
 
@@ -208,33 +211,76 @@ function calculate_intensity_krang(scale_factor_ipole::Float64)
         phi = [pt.ϕs for pt in line]
         
         #print where the line started, where it is ending and the minimum value of R
-        # println("RayStart r = $(r[1]), Ray Finish r = $(r[end]), min r = $(minimum(r))")
         X = [t, log.(r),th/π, phi]
         # println("StartX = $(t[1]), log(r)=$(log(r[1])), θ=$(th[1]/π), ϕ=$(phi[1])")
+
+
+        # Print r, th, phi for each step to a file named "pixelIJ_coordinates.txt"
+        if(print_geodesics)
+            println("Printing geodesics in txt file for pixel ($I, $J)\n")
+            filename = "./output/pixel$(I)$(J)_coordinates.txt"
+            if isfile(filename)
+                rm(filename)
+            end
+            open(filename, "a") do fp
+                for k in 1:nstep
+                @printf(fp, "Step %d: r = %.15f, th = %.15f, phi = %.15e\n", k, r[k], th[k], phi[k])
+                end
+            end
+        end
+
+
+        #check if any r is inf or nan, in case it is, print the r array index where it happens
+        if any(isnan.(r)) || any(isinf.(r))
+            @error "NaN or Inf encountered in r at pixel ($I, $J)"
+            for k in eachindex(r)
+                if isnan(r[k]) || isinf(r[k])
+                    @error "NaN or Inf encountered in r at index $k: r[$k] = $(r[k])"
+                end
+            end
+            error("NaN or Inf encountered in r")
+        end
 
         sr = [pt.νr for pt in line]      
         sθ = [pt.νθ for pt in line]
         Kcon = zeros(Float64, nstep, NDIM)
         dl = zeros(Float64, nstep)
 
-        α = αmin + (αmax - αmin) * (I - 1) / (res - 1)
-        β = βmin + (βmax - βmin) * (J - 1) / (res - 1)
-        η = Krang.η(metric, α, β, θo)
-        λ = Krang.λ(metric, α, θo)
+        η = Krang.η(camera.screen.pixels[idx])
+        λ = Krang.λ(camera.screen.pixels[idx])
 
+        last_valid_index = 0
         for k in 1:nstep
-            if(r[k] < Rh + 0.0001)
-                continue
+            if(r[k] == 0)
+                break
+            end
+            if (r[k] < (Rh + 0.53))
+                println("At pixel[$I, $J], step = $k")
+                println("r[k - 1] = $(r[k-1]), r[k] = $(r[k])")
+                r[k] = 0.0
+                break
             end
             Kcon[k, :] = calcKcon(sr[k], sθ[k], r[k], th[k], phi[k], metric, η, λ, k)
+            last_valid_index = k
         end
-        # println("Start Kcon = $(Kcon[1, :])")
-        dl = sqrt.((diff(X[1]).^2 + diff(X[2]).^2 + diff(X[3]).^2 + diff(X[4]).^2))
+
+
+        # println("Pixel ($I, $J) with nstep = $nstep")
+        # println("RayStart r = $(r[1]), Ray Finish r = $(r[last_valid_index]), min r = $(minimum(r[1:last_valid_index]))\n")
+        #println("At cartesian coordinates: x = $(r[1] * sin(th[1]) * cos(phi[1])), y = $(r[1] * sin(th[1]) * sin(phi[1])), z = $(r[1] * cos(th[1]))")
+        #println("Cartesian coordinates at end of ray: x = $(r[last_valid_index] * sin(th[last_valid_index]) * cos(phi[last_valid_index])), y = $(r[last_valid_index] * sin(th[last_valid_index]) * sin(phi[last_valid_index])), z = $(r[last_valid_index] * cos(th[last_valid_index]))")
+        #dl = sqrt.((diff(X[1]).^2 + diff(X[2]).^2 + diff(X[3]).^2 + diff(X[4]).^2))
+
+        # Compute dl up to the last valid index
+        dl[1:last_valid_index-1] = sqrt.((diff(X[1][1:last_valid_index]).^2 .+ 
+                          diff(X[2][1:last_valid_index]).^2 .+ 
+                          diff(X[3][1:last_valid_index]).^2 .+ 
+                          diff(X[4][1:last_valid_index]).^2))
 
         traj = [OfTraj(dl[k], MVec4(X[1][k], X[2][k], X[3][k], X[4][k]),
                             MVec4(Kcon[k,1], Kcon[k,2], Kcon[k,3], Kcon[k,4]),
-                            MVec4(undef), MVec4(undef)) for k in 1:(nstep-1)]
-        integrate_emission!(traj, nstep, Image, I, J)
+                            MVec4(undef), MVec4(undef)) for k in 1:last_valid_index]
+        integrate_emission!(traj, last_valid_index, Image, I, J)
     end
 
 
@@ -262,39 +308,67 @@ function calculate_intensity_krang(scale_factor_ipole::Float64)
     println("Using freqcgs = $freqcgs, Ftot = $(Ftot)")
     println("nuLnu = $(Ftot * Dsource * Dsource * JY * freqcgs * 4.0 * π)")
 
-    open("./output/Image.bin", "w") do file
-        write(file, Image)
+
+    println("Saving image to output/Image.txt")
+    if isfile("./output/Image.txt")
+        rm("./output/Image.txt")
+    end
+    open("./output/Image.txt", "w") do file
+        for i in 1:nx
+            for j in 1:ny
+                @printf(file, "%.15e ", Image[i, j]* freqcgs^3 * scale_factor)
+            end
+            println(file)
+        end
     end
 end
 
 function main()
     @time begin
         check_parameters()
-        println("Model Parameters: A = $A, α = $α_analytic, height = $height, l0 = $l0")
+        println("Generating an image with size $(nx) x $(ny) pixels")
+        println("Model Parameters: A = $A, α = $α_analytic, height = $height, l0 = $l0, a = $a")
         println("MBH = $MBH, L_unit = $L_unit")
+        println("Dsource = $Dsource")
+
         freq = freqcgs * HPL/(ME * CL * CL) 
         cam_dist, cam_theta_angle, cam_phi_angle = rcam, thcam, phicam
         Xcam = camera_position(cam_dist, cam_theta_angle, cam_phi_angle)
         p = Params(0.0, 0.0, nx, ny, 0.0, eps, maxnstep)
         Image =  zeros(Float64, nx, ny)
-        
-        fovx = DX/(cam_dist)
-        fovy = DY/cam_dist
-        scale_factor = (DX * L_unit / nx) * (DY * L_unit / ny) / (Dsource * Dsource) / JY;
 
-        println("Dsource = $Dsource")
+        fovx = DX/(cam_dist)
+        fovy = DY/(cam_dist) 
+
+        #rad_fovx = DX /Dsource * L_unit
+        #rad_fovy = DY /Dsource * L_unit
+        # rad_fovx = π/2.
+        # rad_fovy = π/2.
+        scale_factor = (DX * L_unit / nx) * (DY * L_unit / ny) / (Dsource * Dsource) / JY 
         println("Running on ", Threads.nthreads(), " threads")
 
         
         if(USE_KRANG)
-            calculate_intensity_krang(scale_factor)
-            return
+            calculate_intensity_krang(scale_factor * 2, fovx * 0.5, fovy * 0.5)
+            #return
         end
         
         for i in 0:(nx - 1)
             println("Processing row $i out of $(nx)")
             Threads.@threads for j in 0:(ny - 1)
                 traj, nstep, = get_pixel(i, j, Xcam, p, fovx, fovy, freq)
+                if(print_geodesics)
+                    println("Printing geodesics in txt file for pixel ($i, $j)\n")
+                    filename = "./output/pixel$(i)$(j)_coordinates_ipole.txt"
+                    if isfile(filename)
+                        rm(filename)
+                    end
+                    open(filename, "a") do fp
+                        for k in 1:nstep
+                        @printf(fp, "Step %d: r = %.15f, th = %.15f, phi = %.15e\n", k, exp(traj[k].X[2]), traj[k].X[3] * π, traj[k].X[4])
+                        end
+                    end
+                end
                 integrate_emission!(traj, nstep, Image, i + 1, j + 1)
             end
         end
@@ -321,9 +395,17 @@ function main()
         println("imax = $imax, jmax = $jmax, Imax = $Imax, Iavg = $Iavg")
         println("Using freqcgs = $freqcgs, Ftot = $Ftot")
         println("nuLnu = $(Ftot * Dsource * Dsource * JY * freqcgs * 4.0 * π)")
-
-        open("./output/Image.bin", "w") do file
-            write(file, Image)
+        println("Saving image to output/Image_ipole.txt")
+        if isfile("./output/Image_ipole.txt")
+            rm("./output/Image_ipole.txt")
+        end
+        open("./output/Image_ipole.txt", "w") do file
+            for j in 1:nx
+                for i in 1:ny
+                    @printf(file, "%.15e ", Image[i, j]* freqcgs^3 * scale_factor)
+                end
+                println(file)
+            end
         end
     end
 end
