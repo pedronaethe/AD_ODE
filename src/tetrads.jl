@@ -141,11 +141,11 @@ end
 
 function tetrad_to_coordinate(Econ::MMat4, Kcon_tetrad::MVec4)
     """
-    Returns the covariant 4-vector in the coordinate frame from the tetrad frame.
+    Returns the contravariant 4-vector in the coordinate frame from the tetrad frame.
 
     Parameters:
     @Econ: Tetrad basis vectors in covariant form.
-    @Kcon_tetrad: Covariant 4-vector in the tetrad frame.
+    @Kcon_tetrad: Contravariant 4-vector in the tetrad frame.
     """
 
 

@@ -43,6 +43,64 @@ function bl_to_ks(X::MVec4, ucon_bl::MVec4)
 end
 
 
+
+function ks_to_bl(X::MVec4, ucon_ks::MVec4)
+    """
+    Converts the 4-velocity from Kerr-Schild coordinates to Boyer-Lindquist coordinates.
+    Parameters:
+    @X: Vector of position coordinates in internal coordinates.
+    @ucon_ks: Contravariant 4-velocity in Kerr-Schild coordinates.
+    """
+    ucon_bl = zero(MVec4)
+    r, th = bl_coord(X)
+
+    trans = MMat4(undef)
+    for μ in 1:NDIM
+        for ν in 1:NDIM
+            trans[μ, ν] = μ == ν ? 1.0 : 0.0
+        end
+    end
+
+    trans[1,2] = 2.0 * r / (r * r - 2.0 * r + a * a)
+    trans[4,2] = a / (r * r - 2.0 * r + a * a)
+
+    # Invert the transformation matrix
+    rev_trans = inv(trans)
+
+    for μ in 1:NDIM
+        ucon_bl[μ] = 0.0
+        for ν in 1:NDIM
+            ucon_bl[μ] += rev_trans[μ, ν] * ucon_ks[ν]
+        end
+    end
+
+    return ucon_bl
+end
+    
+
+    
+
+
+function vec_to_ks(X::MVec4, v_nat::MVec4)
+    """
+    Converts a 4-vector from the native coordinate system to Kerr-Schild coordinates.
+    Parameters:
+    @X: Vector of position coordinates in internal coordinates.
+    @v_nat: 4-vector in the native coordinate system.
+    """
+    v_ks = zero(MVec4)
+    dxdX = MMat4(undef)
+    dxdX = set_dxdX(X)
+
+    for μ in 1:NDIM
+        for ν in 1:NDIM
+            v_ks[μ] += dxdX[μ, ν] * v_nat[ν]
+        end
+    end
+
+    return v_ks
+end
+
 function set_dxdX(X::MVec4)
     """
     Computes the Jacobian matrix dxdX for the transformation from Kerr-Schild coordinates to internal coordinates.

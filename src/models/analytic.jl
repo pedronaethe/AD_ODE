@@ -3,9 +3,9 @@ export get_analytic_jk, radiating_region
 
 #Model parameters (adjust spin in main.jl)
 const A = 0.0
-const α_analytic = -3.0
-const height = (0.)
-const l0 = 0.0
+const α_analytic = -0.0
+const height = (10. /3.)
+const l0 = 1.0
 
 function radiating_region(X::MVec4)
     """

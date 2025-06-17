@@ -10,7 +10,7 @@ mutable struct Params
     nx::Int
     ny::Int
     rotcam::Float64
-    eps::Float64
+    eps_ipole::Float64
     maxnstep::Int
     dsource::Float64
 end

@@ -71,7 +71,7 @@ function camera_position(cam_dist::Float64, cam_theta_angle::Float64, cam_phi_an
     x = MVec4(0.0, cam_dist, cam_theta_angle/180 * π, cam_phi_angle/180 * π)
     X[1] = 0.0
     X[2] = log(cam_dist)
-    X[3] = root_find(x)
+    X[3] = (x[3])/π
     X[4] = cam_phi_angle/180 * π
     return X
 end

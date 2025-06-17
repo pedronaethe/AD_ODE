@@ -1,6 +1,6 @@
 
 export init_XK
-function init_XK(i::Int, j::Int, Xcam::MVec4, params, fovx::Float64, fovy::Float64)
+function init_XK(i::Int, j::Int, Xcam::MVec4, res,θo, fovx::Float64, fovy::Float64)
     """
     Initializes a geodesic from the camera
 
@@ -21,17 +21,14 @@ function init_XK(i::Int, j::Int, Xcam::MVec4, params, fovx::Float64, fovy::Float
 
 
     _, Econ, Ecov = make_camera_tetrad(Xcam)
-    dxoff::Float64 = (i + 0.5 + params.xoff - 0.01) / params.nx - 0.5
-    dyoff::Float64 = (j + 0.5 + params.yoff) / params.ny - 0.5
-
+    print_matrix("Econ ",Econ)
+    error()
+    dxoff::Float64 = (i + 0.5 - 0.01) / res - 0.5
+    dyoff::Float64 = (j + 0.5) / res - 0.5
     Kcon_tetrad[1] = 0.0
-    Kcon_tetrad[2] = (dxoff * cos(params.rotcam) - dyoff * sin(params.rotcam)) * fovx
-    Kcon_tetrad[3] = (dxoff * sin(params.rotcam) + dyoff * cos(params.rotcam)) * fovy
+    Kcon_tetrad[2] = (dxoff * cos(0) - dyoff * sin(0)) * fovx
+    Kcon_tetrad[3] = (dxoff * sin(0) + dyoff * cos(0)) * fovy
     Kcon_tetrad[4] = 1.0
-    # Kcon_tetrad[1] = 0.0
-    # Kcon_tetrad[2] = (i/(params.nx) - 0.5) * fovx
-    # Kcon_tetrad[3] = (j/(params.ny) - 0.5) * fovy
-    # Kcon_tetrad[4] = 1.0
 
     Kcon_tetrad = null_normalize(Kcon_tetrad, 1.0)  
     Kcon = tetrad_to_coordinate(Econ, Kcon_tetrad)
@@ -41,6 +38,39 @@ function init_XK(i::Int, j::Int, Xcam::MVec4, params, fovx::Float64, fovy::Float
 
     return X, Kcon
 end
+
+function get_pixel(i::Int, j::Int, Xcam::MVec4, eps_ipole, maxnstep, fovx::Float64, fovy::Float64, freq::Float64, res, θo)
+    """
+    Evolves the geodesic for each pixel.
+    Parameters:
+    @i: x-index of the pixel in the image plane.
+    @j: y-index of the pixel in the image plane.
+    @Xcam: Position vector of the camera in internal coordinates.
+    @params: Parameters for the camera.
+    @fovx: Field of view in the x-direction.
+    @fovy: Field of view in the y-direction.
+    @freq: Frequency of the radiation.
+    """
+    X = MVec4(undef)
+    Kcon = MVec4(undef)
+
+    X, Kcon = init_XK(i, j, Xcam, res, θo, fovx, fovy)
+
+    for mu in 1:NDIM
+        Kcon[mu] *= freq
+    end
+    traj = Vector{OfTraj}()
+    sizehint!(traj, maxnstep)
+    nstep = trace_geodesic(X, Kcon, traj, eps_ipole, maxnstep, i, j)
+    resize!(traj, length(traj)) 
+
+    if nstep >= maxnstep - 1
+        @error "Max number of steps exceeded at pixel ($i, $j)"
+    end
+
+    return traj, nstep
+end
+
 
 function get_connection_analytic(X::MVec4)
     """
@@ -420,5 +450,35 @@ function trace_geodesic(Xi::MVec4, Kconi::MVec4, traj::Vector{OfTraj}, eps::Floa
 
 
     return nstep
+end
+
+function KrangGeoPinHole(ro, θo, K, met)
+    a = met.spin
+    E,_,_,L = Krang.metric_dd(met, ro, θo) * K
+    λ = L/E
+    η = (Krang.Σ(met, ro, θo)/E * K[3])^2 - (a * cos(θo))^2 + (λ * cot(θo))^2
+    roots = Krang.get_radial_roots(met, η, λ)
+
+    numreals = sum(Krang._isreal2.(roots))
+    if (numreals == 2) && (abs(imag(roots[4]) / real(roots[4])) < eps(Float64))
+        roots = (roots[1], roots[4], roots[2], roots[3])
+    end
+    I0_o = Krang.Ir_s(met, ro, roots, true)
+
+    pinhole_pos = (0.0, 0.0)
+    pix = Pixel(
+    met,
+    pinhole_pos,
+    roots,
+    I0_o,
+    total_mino_time(met, roots),
+    Krang._absGθo_Gθhat(met, θo, η, λ),
+    θo,
+    ro,
+    η,
+    λ
+)
+
+    return pix
 end
 

@@ -13,15 +13,26 @@ const MMat4 = MMatrix{4,4,Float64}
 const Tensor3D = MArray{Tuple{4,4,4}, Float64, 3, 64}  # 4×4×4 mutable tensor
 
 
-mutable struct Params
-    xoff::Float64
-    yoff::Float64
-    nx::Int
-    ny::Int
-    rotcam::Float64
-    eps::Float64
-    maxnstep::Int
+
+struct Pixel{T} <: Krang.AbstractPixel{T}
+    metric::Kerr{T}
+    "Bardeen coordiantes if ro is \`Inf`, otherwise latitude and longitude"
+    screen_coordinate::NTuple{2,T}
+    "Radial roots"
+    roots::NTuple{4,Complex{T}}
+    "Radial antiderivative"
+    I0_o::T
+    "Total possible Mino time"
+    total_mino_time::T
+    "Angular antiderivative"
+    absGθo_Gθhat::NTuple{2,T}
+    "Inclination"
+    θo::T
+    ro::T
+    η::T
+    λ::T
 end
+
 
 mutable struct OfTraj
     dl::Float64
@@ -41,39 +52,6 @@ include("utils.jl")
 include("radiation.jl")
 include("./models/$(MODEL).jl")
 include("geodesics.jl")
-
-
-function get_pixel(i::Int, j::Int, Xcam::MVec4, params::Params, fovx::Float64, fovy::Float64, freq::Float64)
-    """
-    Evolves the geodesic and integrate emissivity along the geodesic for each pixel.
-    Parameters:
-    @i: x-index of the pixel in the image plane.
-    @j: y-index of the pixel in the image plane.
-    @Xcam: Position vector of the camera in internal coordinates.
-    @params: Parameters for the camera.
-    @fovx: Field of view in the x-direction.
-    @fovy: Field of view in the y-direction.
-    @freq: Frequency of the radiation.
-    """
-    X = MVec4(undef)
-    Kcon = MVec4(undef)
-
-    X, Kcon = init_XK(i, j, Xcam, params, fovx, fovy)
-
-    for mu in 1:NDIM
-        Kcon[mu] *= freq
-    end
-    traj = Vector{OfTraj}()
-    sizehint!(traj, params.maxnstep)  
-    nstep = trace_geodesic(X, Kcon, traj, params.eps, params.maxnstep, i, j)
-    resize!(traj, length(traj)) 
-
-    if nstep >= params.maxnstep - 1
-        @error "Max number of steps exceeded at pixel ($i, $j)"
-    end
-
-    return traj, nstep
-end
 
 
 function calcKcon(sr::Bool, sθ::Bool, r::Float64, θ::Float64, ϕ::Float64, metric::Kerr, η::Float64, λ::Float64, nstep::Int)
@@ -179,6 +157,7 @@ function integrate_emission!(traj::Vector{OfTraj}, nstep::Int, Image::Matrix{Flo
     #println("Final intensity at pixel ($I, $J): $Intensity \n")
 end
 
+
 function calculate_intensity_krang(scale_factor_ipole::Float64, rad_fovx::Float64, rad_fovy::Float64)
     Image =  zeros(Float64, nx, ny)
     metric = Krang.Kerr(a);
@@ -190,6 +169,20 @@ function calculate_intensity_krang(scale_factor_ipole::Float64, rad_fovx::Float6
     res = nx
     println("Using krang for geodesics calculations, this may take a while...")
     println("rad_fovx = $rad_fovx, rad_fovy = $rad_fovy [rad]")
+    # Xcam = camera_position(rcam, thcam, phicam)
+    # lines = Matrix{Vector{Krang.Intersection}}(undef, res, res)
+    # camera = Matrix{Krang.AbstractPixel{Float64}}(undef, res, res)
+    # for i in 1:res
+    #     for j in 1:res
+    #         X,Kconp = init_XK(i,j, Xcam, params, fovx, fovy)
+    #         Kconp_KS = vec_to_ks(X, Kconp)
+    #         kconp_bl = ks_to_bl(X, Kconp_KS)
+    #         #Kcovp_BL = flip_index(kconp_bl, gcov_bl(r,th))
+
+    #         camera[i,j] = KrangGeoPinHole(rcam, θo, kconp_bl, metric)
+    #         lines[i,j] = Krang.generate_ray(camera[i,j], krang_points)
+    #     end
+    # end
     camera = Krang.IntensityCamera(metric, θo, 1000.0,-rad_fovx, rad_fovx, -rad_fovy, rad_fovy, res);
     #camera = Krang.IntensityCamera(metric, θo, αmin, αmax, βmin, βmax, res);
     lines = Krang.generate_ray.(camera.screen.pixels, krang_points)
@@ -320,6 +313,38 @@ function calculate_intensity_krang(scale_factor_ipole::Float64, rad_fovx::Float6
     end
 end
 
+function IpoleGeoIntensityIntegration(Xcam, fovx, fovy, freq, eps_ipole, maxnstep, res, θo; integrate_emission_flag=true)
+    
+    Image = integrate_emission_flag ? zeros(Float64, res, res) : nothing
+    trajs = !integrate_emission_flag ? Matrix{Vector{OfTraj}}(undef, res, res) : nothing
+    freq_unitless = freq * HPL/(ME * CL * CL)  # Convert frequency to unitless
+    for i in 0:(res - 1)
+        println("Processing row $i out of $(res)")
+        Threads.@threads for j in 0:(res - 1)
+            traj, nstep = get_pixel(i, j, Xcam, eps_ipole, maxnstep, fovx, fovy, freq_unitless, res, θo)
+            if print_geodesics
+                println("Printing geodesics in txt file for pixel ($i, $j)\n")
+                filename = "./output/pixel$(i)$(j)_coordinates_ipole.txt"
+                if isfile(filename)
+                    rm(filename)
+                end
+                open(filename, "a") do fp
+                    for k in 1:nstep
+                        @printf(fp, "Step %d: r = %.15f, th = %.15f, phi = %.15e\n", k, exp(traj[k].X[2]), traj[k].X[3] * π, traj[k].X[4])
+                    end
+                end
+            end
+            if integrate_emission_flag
+                integrate_emission!(traj, nstep, Image, i + 1, j + 1)
+            else
+                trajs[i+1, j+1] = traj
+            end
+        end
+    end
+    return integrate_emission_flag ? Image : (trajs)
+end
+
+
 function main()
     @time begin
         check_parameters()
@@ -328,14 +353,11 @@ function main()
         println("MBH = $MBH, L_unit = $L_unit")
         println("Dsource = $Dsource")
 
-        freq = freqcgs * HPL/(ME * CL * CL) 
-        cam_dist, cam_theta_angle, cam_phi_angle = rcam, thcam, phicam
-        Xcam = camera_position(cam_dist, cam_theta_angle, cam_phi_angle)
-        p = Params(0.0, 0.0, nx, ny, 0.0, eps, maxnstep)
+        Xcam = camera_position(rcam, thcam, phicam)
         Image =  zeros(Float64, nx, ny)
 
-        fovx = DX/(cam_dist)
-        fovy = DY/(cam_dist) 
+        fovx = DX/(rcam)
+        fovy = DY/(rcam) 
 
         #rad_fovx = DX /Dsource * L_unit
         #rad_fovy = DY /Dsource * L_unit
@@ -346,29 +368,11 @@ function main()
 
         
         if(USE_KRANG)
-            calculate_intensity_krang(scale_factor * 2, fovx * 0.5, fovy * 0.5)
-            #return
+            calculate_intensity_krang(scale_factor *2, fovx * 0.25, fovy * 0.25)
+            #calculate_intensity_krang(scale_factor * 2, fovx * 0.5, fovy * 0.5)
         end
-        
-        for i in 0:(nx - 1)
-            println("Processing row $i out of $(nx)")
-            Threads.@threads for j in 0:(ny - 1)
-                traj, nstep, = get_pixel(i, j, Xcam, p, fovx, fovy, freq)
-                if(print_geodesics)
-                    println("Printing geodesics in txt file for pixel ($i, $j)\n")
-                    filename = "./output/pixel$(i)$(j)_coordinates_ipole.txt"
-                    if isfile(filename)
-                        rm(filename)
-                    end
-                    open(filename, "a") do fp
-                        for k in 1:nstep
-                        @printf(fp, "Step %d: r = %.15f, th = %.15f, phi = %.15e\n", k, exp(traj[k].X[2]), traj[k].X[3] * π, traj[k].X[4])
-                        end
-                    end
-                end
-                integrate_emission!(traj, nstep, Image, i + 1, j + 1)
-            end
-        end
+
+        Image = IpoleGeoIntensityIntegration(Xcam, fovx, fovy, freqcgs, eps_ipole, maxnstep, nx, 0; integrate_emission_flag=true )
 
         Ftot::Float64 = 0.0
         Iavg::Float64 = 0.0
@@ -407,5 +411,5 @@ function main()
     end
 end
 
-main()
-GC.gc()
+#main()
+#GC.gc()

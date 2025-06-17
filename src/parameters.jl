@@ -35,16 +35,16 @@ const Dsource = 7.778e3 * PC
 # Camera position in graviational radius units (Rg). Currently only used in ipole integration
 const rcam = 1.e3
 # Camera polar angle in degrees
-const thcam = 60.
-# Camera azimuthal angle in degrees
-const phicam = - 90.
+const thcam = 60.0
+# Camera azimuthal angle in degrees (Krang conventions th = -90 for ipole th = 0)
+const phicam = -90.
 
 const krang_points = 1_000
 ## Krang camera parameters
 # α is the x coordinate in the image plane
-const αmin, αmax = -5.7 , 5.7
+const αmin, αmax = -15.7 , 15.7
 # β is the y coordinate in the image plane
-const βmin, βmax = -5.7 , 5.7
+const βmin, βmax = -15.7 , 15.7
 
 ## Ipole integration parameters
 # Image size in gravitational radius units (Rg) used to calculate the field of view (ipole integration only)
@@ -52,7 +52,7 @@ const DX = 30.0
 const DY = 30.0
 
 # Precision factor for the geodesic integration (only when using ipole integration). 
-const eps = 0.01
+const eps_ipole = 0.01
 
 # Maximum number of steps for the geodesic integration (only when using ipole integration).
 const maxnstep = 50000
