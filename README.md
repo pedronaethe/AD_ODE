@@ -1,6 +1,6 @@
 # Jipole
 ## Overview
-
+--------------- The code is massively under developed so far ---------------
 Jipole is a Julia-based code under development that performs radiative transfer in curved spacetimes. It's intended to use automatic differentiation (autodiff) to compute derivatives of input parameters.
 
 ## Current State
